@@ -1,0 +1,268 @@
+---
+title: "supervivencia reducida"
+format: html
+editor: visual
+---
+
+```{r , echo=FALSE, warning=FALSE,comment=F,include=FALSE}
+
+library(survival)
+library(knitr)
+library(dplyr)
+library(gridExtra)
+library(openintro)
+library(plotrix)
+library(formattable)
+library(KMsurv)
+library(MASS)
+library(ggplot2)
+library(plotly)
+library(survminer)
+library(ggsankey)
+library(circlize)
+library(readxl)
+library(pillar)
+library(kableExtra)
+library(survival)
+library(VSURF)
+library(KMsurv)
+library(randomForestSRC)
+library(lubridate)
+library(nlme)
+
+```
+
+#### ESQUEMA DE SEGUIMIENTO
+
+```{r, echo=FALSE,warning=FALSE, message=FALSE}
+mening <- read_xlsx("/Users/carlosmartinperez/Desktop/MENINGITIS/Meningitis pre-intervención.xlsx",sheet=2)
+fechas<- read_xlsx("/Users/carlosmartinperez/Desktop/MENINGITIS/Meningitis pre-intervención.xlsx",sheet=4)
+
+lcr<-as.duration(as.period(interval(mening$Fecha_h_meningitis , mening$Fecha_h_LCR)))
+lcr<-ifelse(lcr<0,0,lcr)
+lcr<-round(lcr/3600,1)
+mening$lcr<-fechas$lcr
+
+emp<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_h_empirico)))
+emp<-ifelse(emp<0,0,emp)
+emp<-round(emp/3600,1)
+mening$emp<-fechas$emp
+
+dirigido1<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_h_dirigido1)))
+dirigido1<-ifelse(dirigido1<0,0,dirigido1)
+dirigido1<-round(dirigido1/3600,1)
+mening$dirigido1<-fechas$dirigido1
+
+dirigido2<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_h_dirigido2)))
+dirigido2<-ifelse(dirigido2<0,0,dirigido2)
+dirigido2<-round(dirigido2/3600,1)
+mening$dirigido2<-fechas$dirigido2
+
+dirigido3<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_h_dirigido3)))
+dirigido3<-ifelse(dirigido3<0,0,dirigido3)
+dirigido3<-round(dirigido3/3600,1)
+mening$dirigido3<-fechas$dirigido3
+
+rapidat<-as.duration(as.period(interval(fechas$Fecha_h_rapida , fechas$Fecha_h_dirigido1)))
+rapidat<-ifelse(rapidat<0,0,rapidat)
+rapidat<-round(rapidat/3600,1)
+mening$rapidat<-fechas$rapidat
+
+rapida<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_h_rapida)))
+rapida<-ifelse(rapida<0,0,rapida)
+rapida<-round(rapida/3600,1)
+mening$rapida<-fechas$rapida
+
+provi<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_h_provi)))
+provi<-ifelse(provi<0,0,provi)
+provi<-round(provi/3600,1)
+mening$provi<-fechas$provi
+
+recepcion<-as.duration(as.period(interval(fechas$Fecha_h_meningitis , fechas$Fecha_h_recepcion)))
+recepcion<-ifelse(recepcion<0,0,recepcion)
+recepcion<-round(recepcion/3600,1)
+mening$recepcion<-fechas$recepcion
+
+final<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_h_resultado_final)))
+final<-ifelse(final<0,0,final)
+final<-round(final/3600,1)
+mening$final<-fechas$final
+
+cambiodat<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_cambio)))
+cambiodat<-ifelse(cambiodat<0,0,cambiodat)
+cambiodat<-round(cambiodat/3600,1)
+mening$cambiodat<-fechas$cambiodat
+
+diagetiol<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$fecha_diag_etiol)))
+diagetiol<-ifelse(diagetiol<0,0,diagetiol)
+diagetiol<-round(diagetiol/3600,1)
+mening$diagetiol<-fechas$diagetiol
+
+mening$tiempo<-as.duration(as.period(interval(mening$Fecha_h_meningitis , mening$Fecha_h_alta)))
+mening$tiempo<-ifelse(mening$tiempo<0,0,mening$tiempo)
+mening$tiempo<-round(mening$tiempo/3600,1)
+
+
+datos<-matrix(c(lcr,emp,dirigido1,dirigido2,dirigido3,rapidat,rapida,recepcion,provi,final,cambiodat,diagetiol),ncol= 12)
+colnames(datos)<-c("lcr","emp", "dirigido1","dirigido2","dirigido3", "rapidat","rapida","recepcion","provi","final",
+                   "cambiodat","diagetiol")
+
+datos<-as.data.frame(datos)
+datos$PCR2<-mening$PCR2
+
+datos$Año<-mening$Año
+
+ulti<-mening$Año
+
+ulti2<-mening$Año
+
+ulti<-ifelse(ulti>2019 & datos$PCR2=="Si","Si","No")
+
+ulti2<-ifelse(ulti2>2019,"Si","No")
+
+datos$ulti<-ulti
+
+datos$ulti2<-ulti2
+
+datos$Virica<-mening$Virica
+
+datos$Año<-as.factor(datos$Año)
+
+datos$PCR2<-as.factor(datos$PCR2)
+
+datos$ulti<-as.factor(datos$ulti)
+
+datos$ulti2<-as.factor(datos$ulti2)
+
+datos$Virica<-as.factor(datos$Virica)
+
+
+data<-cbind(mening,datos)
+
+
+ggplot(mening,aes(x=1:dim(mening) [1 ], y = tiempo)) +
+geom_linerange(aes(ymin = 0, ymax = tiempo), lwd=0.2) +
+geom_point(aes( color=factor(Muerte_atribuible)), size=1.5) +
+labs(y = "tiempo (Horas)", x = "Paciente nº") +
+coord_flip() +
+scale_color_discrete(name="Tiempo hasta evento", breaks=c("0", "1"),
+labels=c("Censura", "Fallecido meningitis")) + theme(legend.position="left") +
+theme(axis.text=element_text(size=10), axis.title=element_text(size=10),
+legend.text=element_text(size=7), legend.title=element_text(size=8))
+
+```
+
+## ANALISIS BIVARIADO
+
+### VARIABLES CATEGORICAS
+
+#### log-rank test
+
+```{r, echo=FALSE,comment=""}
+library(survival)
+library(survminer)
+Time<-as.numeric(mening$tiempo/24)
+Muertos<-as.numeric(mening$Muerte_atribuible)
+surv<-Surv(Time,Muertos)
+
+km19 <- survfit(Surv(Time,Muertos)~Antibiotic,data =mening)
+s19<-survdiff(surv~Antibiotic,data=mening)
+spv19<-surv_pvalue(km19,method = "survdiff")
+
+km24 <- survfit(Surv(Time,Muertos)~Cambio,data =mening)
+s24<-survdiff(surv~Cambio,data=mening)
+spv24<-surv_pvalue(km24,method = "survdiff") 
+
+km48 <- survfit(Surv(Time,Muertos)~Resultado_cultivo,data =mening)
+s48<-survdiff(surv~Resultado_cultivo,data=mening)
+spv48<-surv_pvalue(km48,method = "survdiff") 
+
+km49 <- survfit(Surv(Time,Muertos)~Agente_etiologico_detectado,data =mening)
+s49<-survdiff(surv~Agente_etiologico_detectado,data=mening)
+spv49<-surv_pvalue(km49,method = "survdiff") 
+
+matkm<-matrix(c(round(s19$chisq,2),1,round(spv19[2],3),
+                round(s24$chisq,2),1,round(spv24[2],3),
+                round(s48$chisq,2),1,round(spv48[2],3), 
+                round(s49$chisq,2),1,round(spv49[2],3)),ncol=3,byrow = T )
+colnames(matkm)<-c("Chi_square","df","p_value")
+rownames(matkm)<-c("Antibiotico previo","Algún cambio tratamiento","Resulado cultivo","Microorganismo")
+
+matkm%>%
+  kbl() %>%
+  kable_styling()
+```
+
+#### Regresiones de Cox simples para variables categóricas
+
+#### Antibióticos previos
+
+```{r,echo=FALSE,comment=""}
+data$Resultado_cultivo <-  factor(data$Resultado_cultivo,
+                              levels = c( "Neisseria meningitidis","Negativo","Streptococcus pneumoniae", "Haemophilus influenzae", "Klebsiella pneumoniae", "Listeria monocytogenes",
+                                         "Streptococcus equi","Streptococcus pyogenes"))
+rca<-coxph(surv~Antibiotic,data=data)
+rcb<-coxph(surv~Cambio,data=data)
+#rcc<-coxph(surv~T_dirigido2_mixto,data=data)
+rcd<-coxph(surv~Resultado_cultivo,data=data)
+rca
+
+```
+
+#### Algun tratamiento dirigido cambiando el tratamiento empírico
+
+```{r,echo=FALSE,comment=""}
+rcb
+```
+
+#### Resultado del cultivo (Categoria de referencia neisseria meningitidis)
+
+```{r,echo=FALSE,comment=""}
+rcd
+```
+
+### VARIABLES NUMERICAS
+
+#### Regresiones de Cox simples
+
+Ninguna variable contínua se asocia significativamente con el timepo hasta la muerte por sepsis.\
+Unicamente dos variables, la puntuación DOORMAT 2 y el tiempo hasta el primer cambio de tratamiento se quedan cerca de la significación. El caso de la puntuación DOORMAT se discute más adelante, y en el caso del tiempo hasta el cambio de tratamiento el resultado es paradójico, ya que el modelo indica que a mayor tiempo hay menor riesgo de muerte por sepsis, lo que contradice, en principio, la lógica de las cosas.\
+Se ha intentado dicotomizar las variables numericas para obtener puntos de corte y así aumentar significacion. Conceptualmente esta es una práctica de la que hay que huir por la fortisima pérdida deinformación que ello supone. En nuestro caso, además, se obtienen curvas km paradójicas de dificil explicación desde el punto de vista clínico. Tal vez la única varable dicotomizada aprovechable sea el indice de Charlson, con un punto de corte de 2.
+
+# Resumen del análisis bivariado
+
+Hasta aquí, podemos concluir que hay dos variables que se asocian con el tiempo hasta la muerte por meningitis: La **toma de antibióticos antes del diagnóstico** y el hecho de **cambiar el tratamiento empírico en algun momento** de la evolución de la enfermedad y en relación con las pruebas diagnósticas realizadas en microbiología.
+
+Otra variable que, probablemente se asocia con el resultado es el resultado del cultivo de LCR y, consecuentemente el tipo de microorganismo identificado. El problema es que, en el mejor de los casos, nos encontramos con 11 categorías dentro de la variable explicativa, lo que hace imposible ajustar una regresión de Cox clásica, debido al relativamente pequeño tamaño muestral.
+
+Por otro lado, la categorización de las variables explicativas contínuas tampoco parece una buena idea, ya que no parecen aportar informacion relevante a los modelos.
+
+# Modelo multivariante
+
+Incluimos en el modelo las dos variables que resultaron significativas en el análisis bivariado.
+
+```{r,echo=FALSE,fig.margin=TRUE,comment="",message=FALSE}
+data$Resultado_cultivo <-  factor(data$Resultado_cultivo,
+                              levels = c( "Neisseria meningitidis","Negativo","Streptococcus pneumoniae", "Haemophilus influenzae", "Klebsiella pneumoniae", "Listeria monocytogenes",
+                                         "Streptococcus equi","Streptococcus pyogenes"))
+rc99<-coxph(surv~Antibiotic+Cambio,data=data)
+rc99
+
+
+```
+
+# Discusión
+
+Tanto la **toma de antibióticos antes del diagnóstico** y el hecho de **cambiar el tratamiento empírico en algun momento** de la evolución de la enfermedad se asocian de forma independiente con el tiempo hasta la muerte por meningitis. Con la toma de antibióticos el riesgo aumenta pero los pacientes a los que se cambia el tratamiento presentan un riesgo instantaneo de muerte por meningitis significativamente menor.\
+Por lo que respecta al **resultado del cultivo**, aunque el modelo no puede ajustar correctamente debido al alto número de categorías, es interesante analizar los resultados. Así, tomando como referencia el diagnóstico de infección por Neisseria meningitidis, el modelo sugiere que las infecciones por neumococo, Streptococcus equi, Klebsiella neumoniae y Listeria monocytogenes, asi como los pacientes con cultivo negativo (infección vírica), presentan un riesgo mayor de muerte por meningitis.
+
+Un aspecto interesante para el estudio es el comportamiento de las puntuaciones y espectros DOORMAT con respecto a su asociación con la mortalidad. Los espectros no ajustan bien en las regresiones, probablemente por el muy escaso numero de individuos en algunas categorías, y por tanto, no podemos considerar valorar sus resultados.\
+Sin embargo, en el caso de las puntuaciones, si que tenemos hallazgos que pueden ser valiosos. Así en la regresión bivariada que incluye a la **puntuación DOORMAT 2** encontramos una asociación negativa (a más puntuacion menos riesgo de muerte instantanea por meningitis), pero con un p valor de 0.06, muy cercano a la significación estadística. Y ello acontece con solo 30 observaciones y 10 fallecimientos, una vez eliminados los casoos faltantes. Creo que esto hay que tenerlo muy presente en próximos análisis.\
+Con la **puntuación DOORMAT 1**, ocurre algo parecido. Aquí tenemos solo 21 casos con 7 fallecidos. A pesar de ello encontramos una asociación negativa con una p de 0.14. Tambien a tener en cuenta. Finalmente con la puntuación en el paso 3 ocurre que el rango de puntuaciones se estrecha mucho, es de 80 a 100, y 23 de los 30 casos tienen 100 puntos, con lo cual determinar si existen diferencias es sumamente complicado. Se ha intentado incluir DOORMAT2 en el modelo multivariante, pero, logicamente empeora el modelo y no alcanza significación.
+
+#### MODELOS BIVARIADOS PARA PUNTUACIONES DOORMAT
+
+```{r,echo=FALSE,fig.margin=TRUE,comment="",message=FALSE}
+coxph(surv~DOORMAT2,data=data)
+coxph(surv~DOORMAT1,data=data)
+```

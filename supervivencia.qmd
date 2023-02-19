@@ -1,0 +1,1074 @@
+---
+title: "Supervivencia en meningitis"
+format: html
+editor: visual
+---
+
+```{r , echo=FALSE, warning=FALSE,comment=F,include=FALSE}
+
+library(survival)
+library(knitr)
+library(dplyr)
+library(gridExtra)
+library(openintro)
+library(plotrix)
+library(formattable)
+library(KMsurv)
+library(MASS)
+library(ggplot2)
+library(plotly)
+library(survminer)
+library(ggsankey)
+library(circlize)
+library(readxl)
+library(pillar)
+library(kableExtra)
+library(survival)
+library(VSURF)
+library(KMsurv)
+library(randomForestSRC)
+library(lubridate)
+library(nlme)
+
+```
+
+### ANALISIS DE SUPERVIVENCIA
+
+Consideramos como variable de resultado el tiempo hasta la muerte atribuible a meningitis.
+
+En primer lugar presentamos un esquema se seguimiento de la cohorte, seguido de las tablas y gráficos de la función de supervivencia y de la incidencia acumulada.
+
+Posteriormente, realizaremos un análisis bivariado que incluye:
+
+-   El cálculo de las diferencias en supervivencia para las distintas variables cualitativas mediante curvas de Kaplan Meier y test long-rank.
+
+-   Se ajustarán regresiones de Cox simples para todas las variables.
+
+-   Para las variables cuantitativas que no alcancen la significación estadística, se estimará el punto de corte optimo para dicotomizarlas y proceder como en las variables cualitativas.
+
+#### ESQUEMA DE SEGUIMIENTO
+
+```{r, echo=FALSE,warning=FALSE}
+
+mening <- read_xlsx("/Users/carlosmartinperez/Desktop/MENINGITIS/Meningitis pre-intervención.xlsx",sheet=2)
+fechas<- read_xlsx("/Users/carlosmartinperez/Desktop/MENINGITIS/Meningitis pre-intervención.xlsx",sheet=4)
+
+lcr<-as.duration(as.period(interval(mening$Fecha_h_meningitis , mening$Fecha_h_LCR)))
+lcr<-ifelse(lcr<0,0,lcr)
+lcr<-round(lcr/3600,1)
+mening$lcr<-fechas$lcr
+
+emp<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_h_empirico)))
+emp<-ifelse(emp<0,0,emp)
+emp<-round(emp/3600,1)
+mening$emp<-fechas$emp
+
+dirigido1<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_h_dirigido1)))
+dirigido1<-ifelse(dirigido1<0,0,dirigido1)
+dirigido1<-round(dirigido1/3600,1)
+mening$dirigido1<-fechas$dirigido1
+
+dirigido2<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_h_dirigido2)))
+dirigido2<-ifelse(dirigido2<0,0,dirigido2)
+dirigido2<-round(dirigido2/3600,1)
+mening$dirigido2<-fechas$dirigido2
+
+dirigido3<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_h_dirigido3)))
+dirigido3<-ifelse(dirigido3<0,0,dirigido3)
+dirigido3<-round(dirigido3/3600,1)
+mening$dirigido3<-fechas$dirigido3
+
+rapidat<-as.duration(as.period(interval(fechas$Fecha_h_rapida , fechas$Fecha_h_dirigido1)))
+rapidat<-ifelse(rapidat<0,0,rapidat)
+rapidat<-round(rapidat/3600,1)
+mening$rapidat<-fechas$rapidat
+
+rapida<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_h_rapida)))
+rapida<-ifelse(rapida<0,0,rapida)
+rapida<-round(rapida/3600,1)
+mening$rapida<-fechas$rapida
+
+provi<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_h_provi)))
+provi<-ifelse(provi<0,0,provi)
+provi<-round(provi/3600,1)
+mening$provi<-fechas$provi
+
+recepcion<-as.duration(as.period(interval(fechas$Fecha_h_meningitis , fechas$Fecha_h_recepcion)))
+recepcion<-ifelse(recepcion<0,0,recepcion)
+recepcion<-round(recepcion/3600,1)
+mening$recepcion<-fechas$recepcion
+
+final<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_h_resultado_final)))
+final<-ifelse(final<0,0,final)
+final<-round(final/3600,1)
+mening$final<-fechas$final
+
+cambiodat<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_cambio)))
+cambiodat<-ifelse(cambiodat<0,0,cambiodat)
+cambiodat<-round(cambiodat/3600,1)
+mening$cambiodat<-fechas$cambiodat
+
+diagetiol<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$fecha_diag_etiol)))
+diagetiol<-ifelse(diagetiol<0,0,diagetiol)
+diagetiol<-round(diagetiol/3600,1)
+mening$diagetiol<-fechas$diagetiol
+
+mening$tiempo<-as.duration(as.period(interval(mening$Fecha_h_meningitis , mening$Fecha_h_alta)))
+mening$tiempo<-ifelse(mening$tiempo<0,0,mening$tiempo)
+mening$tiempo<-round(mening$tiempo/3600,1)
+
+
+datos<-matrix(c(lcr,emp,dirigido1,dirigido2,dirigido3,rapidat,rapida,recepcion,provi,final,cambiodat,diagetiol),ncol= 12)
+colnames(datos)<-c("lcr","emp", "dirigido1","dirigido2","dirigido3", "rapidat","rapida","recepcion","provi","final",
+                   "cambiodat","diagetiol")
+
+datos<-as.data.frame(datos)
+datos$PCR2<-mening$PCR2
+
+datos$Año<-mening$Año
+
+ulti<-mening$Año
+
+ulti2<-mening$Año
+
+ulti<-ifelse(ulti>2019 & datos$PCR2=="Si","Si","No")
+
+ulti2<-ifelse(ulti2>2019,"Si","No")
+
+datos$ulti<-ulti
+
+datos$ulti2<-ulti2
+
+datos$Virica<-mening$Virica
+
+datos$Año<-as.factor(datos$Año)
+
+datos$PCR2<-as.factor(datos$PCR2)
+
+datos$ulti<-as.factor(datos$ulti)
+
+datos$ulti2<-as.factor(datos$ulti2)
+
+datos$Virica<-as.factor(datos$Virica)
+
+
+data<-cbind(mening,datos)
+
+
+ggplot(mening,aes(x=1:dim(mening) [1 ], y = tiempo)) +
+geom_linerange(aes(ymin = 0, ymax = tiempo), lwd=0.2) +
+geom_point(aes( color=factor(Muerte_atribuible)), size=1.5) +
+labs(y = "tiempo (Horas)", x = "Paciente nº") +
+coord_flip() +
+scale_color_discrete(name="Tiempo hasta evento", breaks=c("0", "1"),
+labels=c("Censura", "Fallecido meningitis")) + theme(legend.position="left") +
+theme(axis.text=element_text(size=10), axis.title=element_text(size=10),
+legend.text=element_text(size=7), legend.title=element_text(size=8))
+
+```
+
+#### FUNCION y GRAFICO DE SUPERVIVENCIA
+
+```{r, echo=FALSE,comment=""}
+#Funcion de supervivencia
+Time<-mening$tiempo/24
+mening$Muerte_atribuible <- as.numeric(mening$Muerte_atribuible)
+km0a <- survfit(Surv(Time,Muerte_atribuible)~1,data=mening)
+summary(km0a)
+gk<-ggsurvplot(km0a, size = 0.5, xlab = "Tiempo (Días)", ylab="Supervivencia",
+              ggtheme = theme_gray(),font.x = c(11),font.y = c(11),font.title = c(14),font.legend=c(0),
+              font.tickslab=c(10), conf.int=TRUE, title="Fallecidos por sepsis  ",
+              ylim=c(0,1),palette= 'darkblue',cumevents = FALSE,risk.table = FALSE)
+gk
+
+```
+
+#### FUNCION DE INCIDENCIA ACUMULADA
+
+```{r, echo=FALSE,comment=""}
+ia<-ggsurvplot(km0a, size = 0.5, fun="event", xlab = "Tiempo (Días)", ylab="Muerte",ggtheme = theme_gray(),font.x = c(11),
+               font.y = c(11),font.title = c(14),font.legend=c(0),
+               font.tickslab=c(10), conf.int=FALSE, title="Función de Incidencia de muerte por sepsis",
+               ylim=c(0,1), palette = "peru")
+ia
+```
+
+## ANALISIS BIVARIADO
+
+### VARIABLES CATEGORICAS
+
+#### log-rank test
+
+```{r, echo=FALSE,comment=""}
+library(survival)
+library(survminer)
+Time<-as.numeric(mening$tiempo/24)
+Muertos<-as.numeric(mening$Muerte_atribuible)
+surv<-Surv(Time,Muertos)
+
+km1 <- survfit(Surv(Time,Muertos)~Sexo,data=mening)
+s1<-survdiff(surv~Sexo,data=mening)
+spv1<-surv_pvalue(km1,method = "survdiff")
+
+km2 <- survfit(Surv(Time,Muertos)~charlson_Index3,data=mening)
+s2<-survdiff(surv~charlson_Index3,data=mening)
+spv2<-surv_pvalue(km2,method = "survdiff")
+
+km3 <- survfit(Surv(Time,Muertos)~Smoking_history,data=mening)
+s3<-survdiff(surv~Smoking_history,data=mening)
+spv3<-surv_pvalue(km3,method = "survdiff")
+
+km4 <- survfit(Surv(Time,Muertos)~Drinking_history,data=mening)
+s4<-survdiff(surv~Drinking_history,data=mening)
+spv4<-surv_pvalue(km4,method = "survdiff")
+
+km5 <- survfit(Surv(Time,Muertos)~Diabetes,data=mening)
+s5<-survdiff(surv~Diabetes,data=mening)
+spv5<-surv_pvalue(km5,method = "survdiff")
+
+km6 <- survfit(Surv(Time,Muertos)~Hypertension,data=mening)
+s6<-survdiff(surv~Hypertension,data=mening)
+spv6<-surv_pvalue(km6,method = "survdiff")
+
+km7 <- survfit(Surv(Time,Muertos)~Chronic_lung_disease,data =mening)
+s7<-survdiff(surv~Chronic_lung_disease,data=mening)
+spv7<-surv_pvalue(km7,method = "survdiff")
+
+km8 <- survfit(Surv(Time,Muertos)~OSA,data =mening)
+s8<-survdiff(surv~OSA,data=mening)
+spv8<-surv_pvalue(km8,method = "survdiff")
+
+km9 <- survfit(Surv(Time,Muertos)~Cerebrovascular_disease,data =mening)
+s9<-survdiff(surv~Cerebrovascular_disease,data=mening)
+spv9<-surv_pvalue(km9,method = "survdiff")
+
+km10 <- survfit(Surv(Time,Muertos)~Cancer,data =mening)
+s10<-survdiff(surv~Cancer,data=mening)
+spv10<-surv_pvalue(km10,method = "survdiff")  
+```
+
+```{r, echo=FALSE,comment=""}
+km11 <- survfit(Surv(Time,Muertos)~Chronic_Kidney_disease,data =mening)
+s11<-survdiff(surv~Chronic_Kidney_disease,data=mening)
+spv11<-surv_pvalue(km11,method = "survdiff") 
+
+km12 <- survfit(Surv(Time,Muertos)~Chronic_liver_impairment,data =mening)
+s12<-survdiff(surv~Chronic_liver_impairment,data=mening)
+spv12<-surv_pvalue(km12,method = "survdiff") 
+
+km13 <- survfit(Surv(Time,Muertos)~MIS,data =mening)
+s13<-survdiff(surv~MIS,data=mening)
+spv13<-surv_pvalue(km13,method = "survdiff")
+
+#km14 <- survfit(Surv(Time,Muertos)~Residence,data =mening)
+#s14<-survdiff(surv~Residence,data=mening)
+#spv14<-surv_pvalue(km14,method = "survdiff")
+
+km15 <- survfit(Surv(Time,Muertos)~Statin,data =mening)
+s15<-survdiff(surv~Statin,data=mening)
+spv15<-surv_pvalue(km15,method = "survdiff") 
+
+km16 <- survfit(Surv(Time,Muertos)~ACE_inhibitor_ARB,data =mening)
+s16<-survdiff(surv~ACE_inhibitor_ARB,data=mening)
+spv16<-surv_pvalue(km16,method = "survdiff")
+ 
+km17 <- survfit(Surv(Time,Muertos)~Systemic_glucocorticoid,data =mening)
+s17<-survdiff(surv~Systemic_glucocorticoid,data=mening)
+spv17<-surv_pvalue(km17,method = "survdiff") 
+
+km18 <- survfit(Surv(Time,Muertos)~oral_anticoagulant_warfarin,data =mening)
+s18<-survdiff(surv~oral_anticoagulant_warfarin,data=mening)
+spv18<-surv_pvalue(km18,method = "survdiff")
+
+km19 <- survfit(Surv(Time,Muertos)~Antibiotic,data =mening)
+s19<-survdiff(surv~Antibiotic,data=mening)
+spv19<-surv_pvalue(km19,method = "survdiff")
+
+km20 <- survfit(Surv(Time,Muertos)~Procedencia,data =mening)
+s20<-survdiff(surv~Procedencia,data=mening)
+spv20<-surv_pvalue(km20,method = "survdiff") 
+
+km21 <- survfit(Surv(Time,Muertos)~Desde_observación,data =mening)
+s21<-survdiff(surv~Desde_observación,data=mening)
+spv21<-surv_pvalue(km21,method = "survdiff")  
+```
+
+```{r, echo=FALSE,comment=""}
+#km22 <- survfit(Surv(Time,Muertos)~Adquisicion,data =mening)
+#s22<-survdiff(surv~Adquisicion,data=mening)
+#spv22<-surv_pvalue(km22,method = "survdiff") 
+
+km23 <- survfit(Surv(Time,Muertos)~Diagnostico_sindromico,data =mening)
+s23<-survdiff(surv~Diagnostico_sindromico,data=mening)
+spv23<-surv_pvalue(km23,method = "survdiff") 
+
+km24 <- survfit(Surv(Time,Muertos)~Cambio,data =mening)
+s24<-survdiff(surv~Cambio,data=mening)
+spv24<-surv_pvalue(km24,method = "survdiff") 
+
+km25 <- survfit(Surv(Time,Muertos)~TABP,data =mening)
+s25<-survdiff(surv~TABP,data=mening)
+spv25<-surv_pvalue(km25,method = "survdiff") 
+
+km26 <- survfit(Surv(Time,Muertos)~PCR2,data =mening)
+s26<-survdiff(surv~PCR2,data=mening)
+spv26<-surv_pvalue(km26,method = "survdiff") 
+
+km27 <- survfit(Surv(Time,Muertos)~T_empirico,data =mening)
+s27<-survdiff(surv~T_empirico,data=mening)
+spv27<-surv_pvalue(km27,method = "survdiff") 
+
+km28 <- survfit(Surv(Time,Muertos)~Resultado_prueba_rapida,data =mening)
+s28<-survdiff(surv~Resultado_prueba_rapida,data=mening)
+spv28<-surv_pvalue(km28,method = "survdiff") 
+
+km29 <- survfit(Surv(Time,Muertos)~T_em_combinado,data =mening)
+s29<-survdiff(surv~T_em_combinado,data=mening)
+spv29<-surv_pvalue(km29,method = "survdiff") 
+
+km30 <- survfit(Surv(Time,Muertos)~T_em_mixto,data =mening)
+s30<-survdiff(surv~T_em_mixto,data=mening)
+spv30<-surv_pvalue(km30,method = "survdiff")  
+
+km34 <- survfit(Surv(Time,Muertos)~Espectro_DOORMAT0,data =mening)
+s34<-survdiff(surv~Espectro_DOORMAT0,data=mening)
+spv34<-surv_pvalue(km34,method = "survdiff") 
+
+km35 <- survfit(Surv(Time,Muertos)~Actividad0,data =mening)
+s35<-survdiff(surv~Actividad0,data=mening)
+spv35<-surv_pvalue(km35,method = "survdiff") 
+```
+
+```{r, echo=FALSE,comment=""}
+km36 <- survfit(Surv(Time,Muertos)~Tipo_prueba_rapida,data =mening)
+s36<-survdiff(surv~Tipo_prueba_rapida,data=mening)
+spv36<-surv_pvalue(km36,method = "survdiff") 
+
+km37 <- survfit(Surv(Time,Muertos)~Cambio_Tto1,data =mening)
+s37<-survdiff(surv~Cambio_Tto1,data=mening)
+spv37<-surv_pvalue(km37,method = "survdiff") 
+
+km38 <- survfit(Surv(Time,Muertos)~dirigido1_combinado,data =mening)
+s38<-survdiff(surv~dirigido1_combinado,data=mening)
+spv38<-surv_pvalue(km38,method = "survdiff") 
+
+km39 <- survfit(Surv(Time,Muertos)~dirigido1_mixto,data =mening)
+s39<-survdiff(surv~dirigido1_mixto,data=mening)
+spv39<-surv_pvalue(km39,method = "survdiff") 
+
+km40 <- survfit(Surv(Time,Muertos)~Espectro_DOORMAT1,data =mening)
+s40<-survdiff(surv~Espectro_DOORMAT1,data=mening)
+spv40<-surv_pvalue(km40,method = "survdiff")  
+
+km41 <- survfit(Surv(Time,Muertos)~Provisional,data =mening)
+s41<-survdiff(surv~Provisional,data=mening)
+spv41<-surv_pvalue(km41,method = "survdiff") 
+
+km42 <- survfit(Surv(Time,Muertos)~Cambio_Tto2,data =mening)
+s42<-survdiff(surv~Cambio_Tto2,data=mening)
+spv42<-surv_pvalue(km42,method = "survdiff") 
+
+km43 <- survfit(Surv(Time,Muertos)~T_dirigido2_combinado,data =mening)
+s43<-survdiff(surv~T_dirigido2_combinado,data=mening)
+spv43<-surv_pvalue(km43,method = "survdiff") 
+
+km44 <- survfit(Surv(Time,Muertos)~T_dirigido2_mixto,data =mening)
+s44<-survdiff(surv~T_dirigido2_mixto,data=mening)
+spv44<-surv_pvalue(km44,method = "survdiff") 
+
+km47 <- survfit(Surv(Time,Muertos)~Espectro_DOORMAT2,data =mening)
+s47<-survdiff(surv~Cambio_Tto2,data=mening)
+spv47<-surv_pvalue(km47,method = "survdiff")  
+```
+
+```{r, echo=FALSE,comment=""}
+km48 <- survfit(Surv(Time,Muertos)~Resultado_cultivo,data =mening)
+s48<-survdiff(surv~Resultado_cultivo,data=mening)
+spv48<-surv_pvalue(km48,method = "survdiff") 
+
+km49 <- survfit(Surv(Time,Muertos)~Agente_etiologico_detectado,data =mening)
+s49<-survdiff(surv~Agente_etiologico_detectado,data=mening)
+spv49<-surv_pvalue(km49,method = "survdiff") 
+
+km50 <- survfit(Surv(Time,Muertos)~Virica,data =mening)
+s50<-survdiff(surv~Virica,data=mening)
+spv50<-surv_pvalue(km50,method = "survdiff") 
+
+km51 <- survfit(Surv(Time,Muertos)~Cambio_Tto3,data =mening)
+s51<-survdiff(surv~Cambio_Tto3,data=mening)
+spv51<-surv_pvalue(km51,method = "survdiff")  
+
+km52 <- survfit(Surv(Time,Muertos)~T_dirigido3_combinado,data =mening)
+s52<-survdiff(surv~T_dirigido3_combinado,data=mening)
+spv52<-surv_pvalue(km52,method = "survdiff")   
+
+km52a <- survfit(Surv(Time,Muertos)~Espectro_DOORMAT3,data =mening)
+s52a<-survdiff(surv~Espectro_DOORMAT3,data=mening)
+spv52a<-surv_pvalue(km52a,method = "survdiff")
+
+#######################
+
+matkm<-matrix(c(round(s1$chisq,2),1,round(spv1[2],3),
+                round(s2$chisq,2),1,round(spv2[2],3),
+                round(s3$chisq,2),1,round(spv3[2],3), 
+                round(s4$chisq,2),1,round(spv4[2],3),
+                round(s5$chisq,2),1,round(spv5[2],3),
+                round(s6$chisq,2),1,round(spv6[2],3),
+                round(s7$chisq,2),1,round(spv7[2],3),
+                round(s8$chisq,2),1,round(spv8[2],3),
+                round(s9$chisq,2),1,round(spv9[2],3),
+                round(s10$chisq,2),1,round(spv10[2],3),
+                
+                round(s11$chisq,2),1,round(spv11[2],3),
+                round(s12$chisq,2),1,round(spv12[2],3),
+                round(s13$chisq,2),1,round(spv13[2],3),
+                #round(s14$chisq,2),1,round(spv14[2],3),
+                round(s15$chisq,2),1,round(spv15[2],3),
+                round(s16$chisq,2),1,round(spv16[2],3),
+                round(s17$chisq,2),1,round(spv17[2],3),
+                round(s18$chisq,2),1,round(spv18[2],3),
+                round(s19$chisq,2),1,round(spv19[2],3),
+                round(s20$chisq,2),1,round(spv20[2],3),
+                round(s21$chisq,2),1,round(spv21[2],3),
+                
+                #round(s22$chisq,2),1,round(spv22[2],3),
+                round(s23$chisq,2),1,round(spv23[2],3),
+                round(s24$chisq,2),1,round(spv24[2],3),
+                round(s25$chisq,2),1,round(spv25[2],3),
+                round(s26$chisq,2),1,round(spv26[2],3),
+                round(s27$chisq,2),1,round(spv27[2],3),
+                round(s28$chisq,2),1,round(spv28[2],3),
+                round(s29$chisq,2),3,round(spv29[2],3),
+                round(s30$chisq,2),1,round(spv30[2],3),
+                round(s34$chisq,2),1,round(spv34[2],3),
+                round(s35$chisq,2),1,round(spv35[2],3),
+                
+                round(s36$chisq,2),1,round(spv36[2],3),
+                round(s37$chisq,2),1,round(spv37[2],3),
+                round(s38$chisq,2),1,round(spv38[2],3),
+                round(s39$chisq,2),1,round(spv39[2],3),
+                round(s40$chisq,2),1,round(spv40[2],3),
+                round(s41$chisq,2),1,round(spv41[2],3),
+round(s42$chisq,2),1,round(spv42[2],3),
+round(s43$chisq,2),1,round(spv43[2],3),
+round(s44$chisq,2),1,round(spv44[2],3),
+round(s47$chisq,2),1,round(spv47[2],3),
+
+round(s48$chisq,2),1,round(spv48[2],3),
+round(s49$chisq,2),1,round(spv49[2],3),
+round(s50$chisq,2),1,round(spv50[2],3),
+round(s51$chisq,2),1,round(spv51[2],3),
+round(s52$chisq,2),1,round(spv52[2],3),
+round(s52a$chisq,2),1,round(spv52a[2],3)
+                
+                ),ncol=3,byrow = T )
+colnames(matkm)<-c("Chi_square","df","p_value")
+rownames(matkm)<-c("Sexo","charlson_Index3","Smoking_history","Drinking_history","Diabetes","Hypertension",
+                   "Chronic_lung_disease","OSA","Cerebrovascular_disease","Cancer",
+                   
+                   "Chronick_Kidney_disease","Chorinic_liver_impairment","immunesuppresivemedications","Statin",
+                   "ACE_inhibitor_ARB","Systemic_glucocorticoid","oral_anticoagulant_warfarin","Antibiotic",
+                   "Procedencia","Observacion", 
+                   
+                   "Diagnostico_sindromico","Cambio","TABP",
+                   "PCR2","T_empirico",
+                   "Resultado_prueba_rapida","T_em_combinado","T_em_mixto",
+                   "Espectro_DOORMAT0","Actividad0", 
+                   
+                   "Tipo_prueba_rapida","Cambio_Tto1","dirigido1_combinado","dirigido1_mixto","Espectro_DOORMAT1",
+                   "Provisional","Cambio_Tto2",
+                   
+"T_dirigido2_combinado","T_dirigido2_mixto","Espectro_DOORMAT2",
+"Resultado_cultivo","Agente_etiologico_detectado","Virica","Cambio_Tto3","T_dirigido3_combinado","Espectro_DOORMAT3")
+
+cs_dt <- data.frame (matkm)
+cs_dt$Variables = row.names(cs_dt)
+row.names(cs_dt) <- NULL
+cs_dt$p_value = cell_spec(cs_dt$p_value, color = ifelse(cs_dt$p_value < 0.05, "red", "black"))
+
+cs_dt <- cs_dt[c("Variables","Chi_square", "df", "p_value")]
+
+kbl(cs_dt, escape = F) %>%
+  kable_paper("striped", full_width = T)
+
+#kable(matkm)%>%
+  #kable_paper(bootstrap_options = "striped", full_width = T)
+```
+
+
+
+```{r, echo=FALSE,comment=""}
+ps19<-ggsurvplot(km19, size = 0.7, xlab = "Tiempo (Dias)", ylab="Supervivencia",
+                title="Curvas KM para antibiótico previo",font.title=12,
+                legend="bottom",
+                ggtheme = theme_gray(),font.x = c(9),font.y = c(9),font.legend=c(8),
+                font.tickslab=c(8),censor=FALSE,pval = TRUE, pval.size=c(4), pval.coord=c(0.1,0.1))
+
+ps24<-ggsurvplot(km24, size = 0.7, xlab = "Tiempo (Dias)", ylab="Supervivencia",
+                title="Curvas KM para algun cambio de tratamiento",font.title=12,
+                legend="bottom",
+                ggtheme = theme_gray(),font.x = c(9),font.y = c(9),font.legend=c(8),
+                font.tickslab=c(7),censor=FALSE,pval = TRUE, pval.size=c(4), pval.coord=c(0.1,0.1))
+                
+ps27<-ggsurvplot(km27, size = 0.7, xlab = "Tiempo (Dias)", ylab="Supervivencia",
+                title="Curvas KM para tratamiento empírico",font.title=12,
+                legend="bottom",
+                ggtheme = theme_gray(),font.x = c(9),font.y = c(9),font.legend=c(8),
+                font.tickslab=c(7),censor=FALSE,pval = TRUE, pval.size=c(4), pval.coord=c(0.1,0.1)) 
+
+ps34<-ggsurvplot(km34, size = 0.7, xlab = "Tiempo (Dias)", ylab="Supervivencia",
+                title="Curvas KM para Espectro DOORMAT 0",font.title=12,
+                legend="bottom",
+                ggtheme = theme_gray(),font.x = c(9),font.y = c(9),font.legend=c(8),
+                font.tickslab=c(8),censor=FALSE,pval = TRUE, pval.size=c(4), pval.coord=c(0.1,0.1)) 
+
+ps43<-ggsurvplot(km43, size = 0.7, xlab = "Tiempo (Dias)", ylab="Supervivencia",
+                title="Curvas KM para tto dirigido 2 combinado",font.title=12,
+                legend="bottom",
+                ggtheme = theme_gray(),font.x = c(9),font.y = c(9),font.legend=c(8),
+                font.tickslab=c(8),censor=FALSE,pval = TRUE, pval.size=c(4), pval.coord=c(0.1,0.1)) 
+
+ps44<-ggsurvplot(km44, size = 0.7, xlab = "Tiempo (Dias)", ylab="Supervivencia",
+                title="Curvas KM para tto dirigido 2 mixto",font.title=12,
+                legend="bottom",
+                ggtheme = theme_gray(),font.x = c(9),font.y = c(9),font.legend=c(8),
+                font.tickslab=c(8),censor=FALSE,pval = TRUE, pval.size=c(4), pval.coord=c(0.1,0.1)) 
+
+
+ps48<-ggsurvplot(km48, size = 0.7, xlab = "Tiempo (Dias)", ylab="Supervivencia",
+                title="Curvas KM para resultado cultivo",font.title=12,
+                legend="bottom",
+                ggtheme = theme_gray(),font.x = c(9),font.y = c(9),font.legend=c(8),
+                font.tickslab=c(8),censor=FALSE,pval = TRUE, pval.size=c(4), pval.coord=c(0.1,0.1)) 
+
+ps49<-ggsurvplot(km49, size = 0.7, xlab = "Tiempo (Dias)", ylab="Supervivencia",
+                title="Curvas KM para agente etiológico",font.title=12,
+                legend="bottom",
+                ggtheme = theme_gray(),font.x = c(9),font.y = c(9),font.legend=c(8),
+                font.tickslab=c(8),censor=FALSE,pval = TRUE, pval.size=c(4), pval.coord=c(0.1,0.1)) 
+
+
+
+```
+
+#### Regresiones de Cox simples para variables categóricas significativas  
+
+#### Antibióticos previos
+
+```{r,echo=FALSE,comment=""}
+data$Resultado_cultivo <-  factor(data$Resultado_cultivo,
+                              levels = c( "Neisseria meningitidis","Negativo","Streptococcus pneumoniae", "Haemophilus influenzae", "Klebsiella pneumoniae", "Listeria monocytogenes",
+                                         "Streptococcus equi","Streptococcus pyogenes"))
+rca<-coxph(surv~Antibiotic,data=data)
+rcb<-coxph(surv~Cambio,data=data)
+#rcc<-coxph(surv~T_dirigido2_mixto,data=data)
+rcd<-coxph(surv~Resultado_cultivo,data=data)
+rca
+
+```    
+
+#### Algun tratamiento dirigido cambiando el tratamiento empírico
+
+```{r,echo=FALSE,comment=""}
+rcb
+```    
+
+#### Resultado del cultivo (Categoria de referencia neisseria meningitidis)
+
+```{r,echo=FALSE,comment=""}
+rcd
+```
+
+
+#### Curvas KM para las variables categóricas con p<0.05  
+
+
+```{r, echo=FALSE,comment=""}
+ps19
+ps24
+#ps34
+#ps43
+ps44
+#ps48
+ps49
+
+```
+
+### VARIABLES NUMERICAS
+
+#### Regresiones de Cox simples
+
+#### Tabla resumen
+
+```{r,echo=FALSE,comment="",results='asis',warning=FALSE}
+
+
+rc1<-coxph(surv~Edad,data=data)
+rc2<-coxph(surv~Charlson_Index,data=data)
+rc3<-coxph(surv~lcr,data=data)
+rc4<-coxph(surv~emp,data=data)
+rc5<-coxph(surv~dirigido1,data=data)
+rc6<-coxph(surv~dirigido2,data=data)
+rc7<-coxph(surv~dirigido3,data=data)
+rc8<-coxph(surv~rapidat,data=data)
+rc9<-coxph(surv~rapida,data=data)
+rc10<-coxph(surv~provi,data=data)
+rc11<-coxph(surv~recepcion,data=data)
+rc12<-coxph(surv~final,data=data)
+rc13<-coxph(surv~cambiodat,data=data)
+rc14<-coxph(surv~diagetiol,data=data)
+rc15<-coxph(surv~DOORMAT1,data=data)
+rc16<-coxph(surv~DOORMAT2,data=data)
+rc17<-coxph(surv~DOORMAT3,data=data)
+```
+
+
+```{r,echo=FALSE,comment="",results='asis',warning=FALSE}
+t1 <- data.frame(summary(rc1)$coef)
+t1$coef <- round(t1$coef,3)
+t1$HR <-round(t1$exp.coef.,3)
+t1$LCL <- round(exp(t1$coef - t1$se.coef. * 1.96 ),3)
+t1$UCL <- round(exp(t1$coef + t1$se.coef. * 1.96 ),3)
+t1$`p-value` <- round(t1$Pr...z..,3)
+t1 <- t1[c(1,6,7,8,9)]
+#kable(t1)%>%
+  #kable_styling()
+t2 <- data.frame(summary(rc2)$coef)
+t2$coef <- round(t2$coef,3)
+t2$HR <-round(t2$exp.coef.,3)
+t2$LCL <- round(exp(t2$coef - t2$se.coef. * 1.96 ),3)
+t2$UCL <- round(exp(t2$coef + t2$se.coef. * 1.96 ),3)
+t2$`p-value` <- round(t2$Pr...z..,3)
+t2 <- t2[c(1,6,7,8,9)]
+
+t3 <- data.frame(summary(rc3)$coef)
+t3$coef <- round(t3$coef,3)
+t3$HR <-round(t3$exp.coef.,3)
+t3$LCL <- round(exp(t3$coef - t3$se.coef. * 1.96 ),3)
+t3$UCL <- round(exp(t3$coef + t3$se.coef. * 1.96 ),3)
+t3$`p-value` <- round(t3$Pr...z..,3)
+t3 <- t3[c(1,6,7,8,9)]
+
+t4 <- data.frame(summary(rc4)$coef)
+t4$coef <- round(t4$coef,3)
+t4$HR <-round(t4$exp.coef.,3)
+t4$LCL <- round(exp(t4$coef - t4$se.coef. * 1.96 ),3)
+t4$UCL <- round(exp(t4$coef + t4$se.coef. * 1.96 ),3)
+t4$`p-value` <- round(t4$Pr...z..,3)
+t4 <- t4[c(1,6,7,8,9)]
+
+t5 <- data.frame(summary(rc5)$coef)
+t5$coef <- round(t5$coef,3)
+t5$HR <-round(t5$exp.coef.,3)
+t5$LCL <- round(exp(t5$coef - t5$se.coef. * 1.96 ),3)
+t5$UCL <- round(exp(t5$coef + t5$se.coef. * 1.96 ),3)
+t5$`p-value` <- round(t5$Pr...z..,3)
+t5 <- t5[c(1,6,7,8,9)]
+
+t6 <- data.frame(summary(rc6)$coef)
+t6$coef <- round(t6$coef,3)
+t6$HR <-round(t6$exp.coef.,3)
+t6$LCL <- round(exp(t6$coef - t6$se.coef. * 1.96 ),3)
+t6$UCL <- round(exp(t6$coef + t6$se.coef. * 1.96 ),3)
+t6$`p-value` <- round(t6$Pr...z..,3)
+t6 <- t6[c(1,6,7,8,9)]
+
+t7 <- data.frame(summary(rc7)$coef)
+t7$coef <- round(t7$coef,3)
+t7$HR <-round(t7$exp.coef.,3)
+t7$LCL <- round(exp(t7$coef - t7$se.coef. * 1.96 ),3)
+t7$UCL <- round(exp(t7$coef + t7$se.coef. * 1.96 ),3)
+t7$`p-value` <- round(t7$Pr...z..,3)
+t7 <- t7[c(1,6,7,8,9)]
+
+t8 <- data.frame(summary(rc8)$coef)
+t8$coef <- round(t8$coef,3)
+t8$HR <-round(t8$exp.coef.,3)
+t8$LCL <- round(exp(t8$coef - t8$se.coef. * 1.96 ),3)
+t8$UCL <- round(exp(t8$coef + t8$se.coef. * 1.96 ),3)
+t8$`p-value` <- round(t8$Pr...z..,3)
+t8 <- t8[c(1,6,7,8,9)]  
+
+t9 <- data.frame(summary(rc9)$coef)
+t9$coef <- round(t9$coef,3)
+t9$HR <-round(t9$exp.coef.,3)
+t9$LCL <- round(exp(t9$coef - t9$se.coef. * 1.96 ),3)
+t9$UCL <- round(exp(t9$coef + t9$se.coef. * 1.96 ),3)
+t9$`p-value` <- round(t9$Pr...z..,3)
+t9 <- t9[c(1,6,7,8,9)]
+
+t10 <- data.frame(summary(rc10)$coef)
+t10$coef <- round(t10$coef,3)
+t10$HR <-round(t10$exp.coef.,3)
+t10$LCL <- round(exp(t10$coef - t10$se.coef. * 1.96 ),3)
+t10$UCL <- round(exp(t10$coef + t10$se.coef. * 1.96 ),3)
+t10$`p-value` <- round(t10$Pr...z..,3)
+t10 <- t10[c(1,6,7,8,9)]
+
+t11 <- data.frame(summary(rc11)$coef)
+t11$coef <- round(t11$coef,3)
+t11$HR <-round(t11$exp.coef.,3)
+t11$LCL <- round(exp(t11$coef - t11$se.coef. * 1.96 ),3)
+t11$UCL <- round(exp(t11$coef + t11$se.coef. * 1.96 ),3)
+t11$`p-value` <- round(t11$Pr...z..,3)
+t11 <- t11[c(1,6,7,8,9)]
+
+t12 <- data.frame(summary(rc12)$coef)
+t12$coef <- round(t12$coef,3)
+t12$HR <-round(t12$exp.coef.,3)
+t12$LCL <- round(exp(t12$coef - t12$se.coef. * 1.96 ),3)
+t12$UCL <- round(exp(t12$coef + t12$se.coef. * 1.96 ),3)
+t12$`p-value` <- round(t12$Pr...z..,3)
+t12 <- t12[c(1,6,7,8,9)]
+
+t13 <- data.frame(summary(rc13)$coef)
+t13$coef <- round(t13$coef,3)
+t13$HR <-round(t13$exp.coef.,3)
+t13$LCL <- round(exp(t13$coef - t13$se.coef. * 1.96 ),3)
+t13$UCL <- round(exp(t13$coef + t13$se.coef. * 1.96 ),3)
+t13$`p-value` <- round(t13$Pr...z..,3)
+t13 <- t13[c(1,6,7,8,9)]  
+
+t14 <- data.frame(summary(rc14)$coef)
+t14$coef <- round(t14$coef,3)
+t14$HR <-round(t14$exp.coef.,3)
+t14$LCL <- round(exp(t14$coef - t14$se.coef. * 1.96 ),3)
+t14$UCL <- round(exp(t14$coef + t14$se.coef. * 1.96 ),3)
+t14$`p-value` <- round(t14$Pr...z..,3)
+t14 <- t14[c(1,6,7,8,9)]
+
+t15 <- data.frame(summary(rc15)$coef)
+t15$coef <- round(t15$coef,3)
+t15$HR <-round(t15$exp.coef.,3)
+t15$LCL <- round(exp(t15$coef - t15$se.coef. * 1.96 ),3)
+t15$UCL <- round(exp(t15$coef + t15$se.coef. * 1.96 ),3)
+t15$`p-value` <- round(t15$Pr...z..,3)
+t15 <- t15[c(1,6,7,8,9)]
+
+t16 <- data.frame(summary(rc16)$coef)
+t16$coef <- round(t16$coef,3)
+t16$HR <-round(t16$exp.coef.,3)
+t16$LCL <- round(exp(t16$coef - t16$se.coef. * 1.96 ),3)
+t16$UCL <- round(exp(t16$coef + t16$se.coef. * 1.96 ),3)
+t16$`p-value` <- round(t16$Pr...z..,3)
+t16 <- t16[c(1,6,7,8,9)]
+
+t17 <- data.frame(summary(rc17)$coef)
+t17$coef <- round(t17$coef,3)
+t17$HR <-round(t17$exp.coef.,3)
+t17$LCL <- round(exp(t17$coef - t17$se.coef. * 1.96 ),3)
+t17$UCL <- round(exp(t17$coef + t17$se.coef. * 1.96 ),3)
+t17$`p-value` <- round(t17$Pr...z..,3)
+t17 <- t17[c(1,6,7,8,9)]
+
+```  
+
+```{r,echo=FALSE,comment="",results='asis'}
+
+tcont <- data.frame(.variable=c("Edad","Charlson_Index","lcr","emp","dirigido1","dirigido2","dirigido3", "rapidat","rapida","recepcion","provi","final","cambiodat","diagetiol","DOORMAT1","DOORMAT2","DOORMAT3"),
+  .coef=c(t1$coef,t2$coef,t3$coef,t4$coef,t5$coef,t6$coef,t7$coef,t8$coef,t9$coef,t10$coef,t11$coef,t12$coef,
+          t13$coef,t14$coef,t15$coef,t16$coef,t17$coef),
+.HR=c(t1$HR,t2$HR,t3$HR,t4$HR,t5$HR,t6$HR,t7$HR,t8$HR,t9$HR,t10$HR,t11$HR,t12$HR,t13$HR,t14$HR,t15$HR,t16$HR,
+      t17$HR),
+.LCL=c(t1$LCL,t2$LCL,t3$LCL,t4$LCL,t5$LCL,t6$LCL,t7$LCL,t8$LCL,t9$LCL,t10$LCL,t11$LCL,t12$LCL,t13$LCL,t14$LCL,
+       t15$LCL,t16$LCL,t17$LCL),
+.UCL=c(t1$UCL,t2$UCL,t3$UCL,t4$UCL,t5$UCL,t6$UCL,t7$UCL,t8$UCL,t9$UCL,t10$UCL,t11$UCL,t12$UCL,t13$UCL,t14$UCL,
+       t15$UCL,t16$UCL,t17$UCL),
+.p_value=c(t1$`p-value`,t2$`p-value`,t3$`p-value`,t4$`p-value`,t5$`p-value`,t6$`p-value`,t7$`p-value`,t8$`p-value`,
+           t9$`p-value`,t10$`p-value`,t11$`p-value`,t12$`p-value`,t13$`p-value`,t14$`p-value`,t15$`p-value`,
+           t16$`p-value`,t17$`p-value`)
+)
+cs_dt2 <- data.frame (tcont)
+#cs_dt$Variables = row.names(cs_dt)
+#row.names(cs_dt) <- NULL
+
+#cs_dt2$.p_value = cell_spec(cs_dt2$.p_value, color = ifelse(cs_dt2$.p_value < 0.05, "red", ifelse(cs_dt2$.p_value #< 0.1,"blue","black")))
+
+#cs_dt <- cs_dt[c("Variables","Chi_square", "df", "p_value")]
+
+kbl(cs_dt2, escape = F) %>%
+  kable_paper("striped", full_width = T)
+
+```     
+
+#### Categorizar variables numéricas no significativas  
+
+```{r,echo=FALSE,comment="",message=FALSE,include=FALSE}
+res.cut <- surv_cutpoint(data, time = "tiempo", event = "Muerte_atribuible",
+                         variables = c("Edad","Charlson_Index","lcr","emp","dirigido1","dirigido2","dirigido3", "rapidat","rapida","recepcion","provi","final","cambiodat","diagetiol","DOORMAT1","DOORMAT2","DOORMAT3"))
+```     
+
+```{r,echo=FALSE,comment="",message=FALSE}
+Time<-data$tiempo/24
+res.cat <- surv_categorize(res.cut)
+colnames(res.cat)<-c("Time","Muerte_atribuible", "Edad_CAT","Charlson_Index_CAT","lcr_CAT","emp_CAT","dirigido1_CAT","dirigido2_CAT","dirigido3_CAT", "rapidat_CAT","rapida_CAT","recepcion_CAT","provi_CAT","final_CAT","cambiodat_CAT","diagetiol_CAT",
+                     "DOORMAT1_CAT","DOORMAT2_CAT","DOORMAT3_CAT")
+src<-summary(res.cut)
+
+km53 <- survfit(Surv(Time,Muerte_atribuible)~Edad_CAT,data =res.cat)
+s53<-survdiff(surv~Edad_CAT,data=res.cat)
+spv53<-surv_pvalue(km53,method = "survdiff")
+
+km54 <- survfit(Surv(Time,Muerte_atribuible)~Charlson_Index_CAT,data =res.cat)
+s54<-survdiff(surv~Charlson_Index_CAT,data=res.cat)
+spv54<-surv_pvalue(km54,method = "survdiff")
+
+km55 <- survfit(Surv(Time,Muerte_atribuible)~lcr_CAT,data =res.cat)
+s55<-survdiff(surv~lcr_CAT,data=res.cat)
+spv55<-surv_pvalue(km55,method = "survdiff")
+
+km56 <- survfit(Surv(Time,Muerte_atribuible)~emp_CAT,data =res.cat)
+s56<-survdiff(surv~emp_CAT,data=res.cat)
+spv56<-surv_pvalue(km56,method = "survdiff")
+
+km57 <- survfit(Surv(Time,Muerte_atribuible)~dirigido1_CAT,data =res.cat)
+s57<-survdiff(surv~dirigido1_CAT,data=res.cat)
+spv57<-surv_pvalue(km57,method = "survdiff")  
+
+km58 <- survfit(Surv(Time,Muerte_atribuible)~dirigido2_CAT,data =res.cat)
+s58<-survdiff(surv~dirigido2_CAT,data=res.cat)
+spv58<-surv_pvalue(km58,method = "survdiff")
+
+km59 <- survfit(Surv(Time,Muerte_atribuible)~dirigido3_CAT,data =res.cat)
+s59<-survdiff(surv~dirigido3_CAT,data=res.cat)
+spv59<-surv_pvalue(km59,method = "survdiff") 
+
+km60 <- survfit(Surv(Time,Muerte_atribuible)~rapidat_CAT,data =res.cat)
+s60<-survdiff(surv~rapidat_CAT,data=res.cat)
+spv60<-surv_pvalue(km60,method = "survdiff") 
+
+km61 <- survfit(Surv(Time,Muerte_atribuible)~rapida_CAT,data =res.cat)
+s61<-survdiff(surv~rapida_CAT,data=res.cat)
+spv61<-surv_pvalue(km61,method = "survdiff")  
+
+km62 <- survfit(Surv(Time,Muerte_atribuible)~recepcion_CAT,data =res.cat)
+s62<-survdiff(surv~recepcion_CAT,data=res.cat)
+spv62<-surv_pvalue(km62,method = "survdiff") 
+
+km63 <- survfit(Surv(Time,Muerte_atribuible)~provi_CAT,data =res.cat)
+s63<-survdiff(surv~provi_CAT,data=res.cat)
+spv63<-surv_pvalue(km63,method = "survdiff") 
+
+km64 <- survfit(Surv(Time,Muerte_atribuible)~final_CAT,data =res.cat)
+s64<-survdiff(surv~final_CAT,data=res.cat)
+spv64<-surv_pvalue(km64,method = "survdiff") 
+
+km65 <- survfit(Surv(Time,Muerte_atribuible)~cambiodat_CAT,data =res.cat)
+s65<-survdiff(surv~cambiodat_CAT,data=res.cat)
+spv65<-surv_pvalue(km65,method = "survdiff")  
+
+km66 <- survfit(Surv(Time,Muerte_atribuible)~diagetiol_CAT,data =res.cat)
+s66<-survdiff(surv~diagetiol_CAT,data=res.cat)
+spv66<-surv_pvalue(km66,method = "survdiff") 
+
+km67 <- survfit(Surv(Time,Muerte_atribuible)~DOORMAT1_CAT,data =res.cat)
+s67<-survdiff(surv~DOORMAT1_CAT,data=res.cat)
+spv67<-surv_pvalue(km67,method = "survdiff")  
+
+km68 <- survfit(Surv(Time,Muerte_atribuible)~DOORMAT2_CAT,data =res.cat)
+s68<-survdiff(surv~DOORMAT2_CAT,data=res.cat)
+spv68<-surv_pvalue(km68,method = "survdiff")  
+
+km69 <- survfit(Surv(Time,Muerte_atribuible)~DOORMAT3_CAT,data =res.cat)
+s69<-survdiff(surv~DOORMAT3_CAT,data=res.cat)
+spv69<-surv_pvalue(km69,method = "survdiff")  
+#######
+matkm2<-matrix(c("Edad_CAT",round(src$cutpoint[1],3),round(s53$chisq,2),round(spv53[2],3),
+                 "Charlson_CAT",round(src$cutpoint[2],3),round(s54$chisq,2),round(spv54[2],3),
+                 "lcr_CAT",round(src$cutpoint[3],3),round(s55$chisq,2),round(spv55[2],3),
+                 "emp_CAT",round(src$cutpoint[4],3),round(s56$chisq,2),round(spv56[2],3),
+                 "dirigido1_CAT",round(src$cutpoint[5],3),round(s57$chisq,2),round(spv57[2],3),
+                 "dirigido2_CAT",round(src$cutpoint[6],3),round(s58$chisq,2),round(spv58[2],3),
+                 "dirigido3_CAT",round(src$cutpoint[7],3),round(s59$chisq,2),round(spv59[2],3),
+                 "rapidat_CAT",round(src$cutpoint[8],3),round(s60$chisq,2),round(spv60[2],3),
+                 "rapida_CAT",round(src$cutpoint[9],3),round(s61$chisq,2),round(spv61[2],3),
+                 "recepcion_CAT",round(src$cutpoint[10],3),round(s62$chisq,2),round(spv62[2],3),
+                 "provi_CAT",round(src$cutpoint[11],3),round(s63$chisq,2),round(spv63[2],3),
+                 "final_CAT",round(src$cutpoint[12],3),round(s64$chisq,2),round(spv64[2],3),
+                 "cambiodat_CAT",round(src$cutpoint[13],3),round(s65$chisq,2),round(spv65[2],3),
+                 "diagetiol_CAT",round(src$cutpoint[14],3),round(s66$chisq,2),round(spv66[2],3),
+                 "DOORMAT1_CAT",round(src$cutpoint[15],3),round(s67$chisq,2),round(spv67[2],3),
+                 "DOORMAT2_CAT",round(src$cutpoint[16],3),round(s68$chisq,2),round(spv68[2],3),
+                 "DOORMAT3_CAT",round(src$cutpoint[17],3),round(s69$chisq,2),round(spv69[2],3)
+                 
+)
+,ncol = 4,byrow = T)
+colnames(matkm2)<-c("Variable","Punto de corte","Chi square","p_value")
+```   
+
+```{r,echo=FALSE,results='asis'}
+cs_dt3 <- data.frame (matkm2)
+
+cs_dt3$p_value = cell_spec(cs_dt3$p_value, color = ifelse(cs_dt3$p_value<0.05, "red", ifelse(cs_dt3$p_value<0.1,"blue","black")))
+
+
+kbl(cs_dt3, escape = FALSE) %>%
+  kable_paper("striped", full_width = TRUE)
+```     
+
+#### Curvas KM para las variables categórizadas con p<=0.05
+
+#### Edad   
+
+Punto de corte: `r round(src$cutpoint[1],3)`    
+
+```{r,echo=FALSE,fig.margin=TRUE,comment="",message=FALSE}
+
+ggsurvplot(km53, data = res.cat, risk.table = FALSE, conf.int = FALSE,
+           xlab = "Tiempo (Horas)", ylab="Muerte por meningitis",
+           title="  ",font.title=14,legend=c("bottom"),
+           ggtheme = theme_gray(),font.x = c(10),font.y = c(10),font.legend=c(8),
+           font.tickslab=c(8),censor=FALSE,pval = TRUE,pval.size=c(4),pval.coord=c(0.1,0.1))
+
+```     
+
+#### Indice de Charlson  
+
+Punto de corte: `r round(src$cutpoint[2],3)`    
+
+```{r,echo=FALSE,fig.margin=TRUE,comment="",message=FALSE}
+
+ggsurvplot(km54, data = res.cat, risk.table = FALSE, conf.int = FALSE,
+           xlab = "Tiempo (Horas)", ylab="Muerte por meningitis",
+           title="  ",font.title=14,legend=c("bottom"),
+           ggtheme = theme_gray(),font.x = c(10),font.y = c(10),font.legend=c(8),
+           font.tickslab=c(8),censor=FALSE,pval = TRUE,pval.size=c(4),pval.coord=c(0.1,0.1))
+
+```    
+
+#### Tiempo hasta tratamiento dirigido 1  
+
+Punto de corte: `r round(src$cutpoint[5],3)`    
+
+```{r,echo=FALSE,fig.margin=TRUE,comment="",message=FALSE}
+
+ggsurvplot(km57, data = res.cat, risk.table = FALSE, conf.int = FALSE,
+           xlab = "Tiempo (Horas)", ylab="Muerte por meningitis",
+           title="  ",font.title=14,legend=c("bottom"),
+           ggtheme = theme_gray(),font.x = c(10),font.y = c(10),font.legend=c(8),
+           font.tickslab=c(8),censor=FALSE,pval = TRUE,pval.size=c(4),pval.coord=c(0.1,0.1))
+
+```    
+
+#### Tiempo hasta tratamiento dirigido 3  
+
+Punto de corte: `r round(src$cutpoint[7],3)`    
+
+```{r,echo=FALSE,fig.margin=TRUE,comment="",message=FALSE}
+
+ggsurvplot(km59, data = res.cat, risk.table = FALSE, conf.int = FALSE,
+           xlab = "Tiempo (Horas)", ylab="Muerte por meningitis",
+           title="  ",font.title=14,legend=c("bottom"),
+           ggtheme = theme_gray(),font.x = c(10),font.y = c(10),font.legend=c(8),
+           font.tickslab=c(8),censor=FALSE,pval = TRUE,pval.size=c(4),pval.coord=c(0.1,0.1))
+
+```    
+
+#### Tiempo hasta informe provisional 
+
+Punto de corte: `r round(src$cutpoint[11],3)`    
+
+```{r,echo=FALSE,fig.margin=TRUE,comment="",message=FALSE}
+
+ggsurvplot(km63, data = res.cat, risk.table = FALSE, conf.int = FALSE,
+           xlab = "Tiempo (Horas)", ylab="Muerte por meningitis",
+           title="  ",font.title=14,legend=c("bottom"),
+           ggtheme = theme_gray(),font.x = c(10),font.y = c(10),font.legend=c(8),
+           font.tickslab=c(8),censor=FALSE,pval = TRUE,pval.size=c(4),pval.coord=c(0.1,0.1))
+
+```     
+
+#### Tiempo hasta informe final 
+
+Punto de corte: `r round(src$cutpoint[12],3)`    
+
+```{r,echo=FALSE,fig.margin=TRUE,comment="",message=FALSE}
+
+ggsurvplot(km64, data = res.cat, risk.table = FALSE, conf.int = FALSE,
+           xlab = "Tiempo (Horas)", ylab="Muerte por meningitis",
+           title="  ",font.title=14,legend=c("bottom"),
+           ggtheme = theme_gray(),font.x = c(10),font.y = c(10),font.legend=c(8),
+           font.tickslab=c(8),censor=FALSE,pval = TRUE,pval.size=c(4),pval.coord=c(0.1,0.1))
+
+```   
+
+#### Tiempo hasta el primer cambio de tratamiento
+
+Punto de corte: `r round(src$cutpoint[13],3)`    
+
+```{r,echo=FALSE,fig.margin=TRUE,comment="",message=FALSE}
+
+ggsurvplot(km65, data = res.cat, risk.table = FALSE, conf.int = FALSE,
+           xlab = "Tiempo (Horas)", ylab="Muerte por meningitis",
+           title="  ",font.title=14,legend=c("bottom"),
+           ggtheme = theme_gray(),font.x = c(10),font.y = c(10),font.legend=c(8),
+           font.tickslab=c(8),censor=FALSE,pval = TRUE,pval.size=c(4),pval.coord=c(0.1,0.1))
+
+```     
+
+#### Puntuación DOORMAT2
+
+Punto de corte: `r round(src$cutpoint[16],3)`    
+
+```{r,echo=FALSE,fig.margin=TRUE,comment="",message=FALSE}
+
+ggsurvplot(km68, data = res.cat, risk.table = FALSE, conf.int = FALSE,
+           xlab = "Tiempo (Horas)", ylab="Muerte por meningitis",
+           title="  ",font.title=14,legend=c("bottom"),
+           ggtheme = theme_gray(),font.x = c(10),font.y = c(10),font.legend=c(8),
+           font.tickslab=c(8),censor=FALSE,pval = TRUE,pval.size=c(4),pval.coord=c(0.1,0.1))
+
+```   
+
+# Resumen del análisis bivariado  
+
+Hasta aquí, podemos concluir que hay dos variables que se asocian con el tiempo hasta la muerte por meningitis: La **toma de antibióticos antes del  diagnóstico** y el hecho de **cambiar el tratamiento empírico en algun momento** de la evolución de la enfermedad y en relación con las pruebas diagnósticas realizadas en microbiología.  
+
+Otra variable que, probablemente se asocia con el resultado es el resultado del cultivo de LCR y, consecuentemente el tipo de microorganismo identificado. El problema es que, en el mejor de los casos, nos encontramos con 11 categorías dentro de la variable explicativa, lo que hace imposible ajustar una regresión de Cox clásica, debido al relativamente pequeño tamaño muestral.  
+
+Por otro lado, la categorización de las variables explicativas contínuas tampoco parece una buena idea, primero por la severísima perdida de información que ello supone, y segundo, porque tampoco parecen aportar informacion relevante a los modelos.  
+
+# Modelo multivariante  
+
+Incluimos en el modelo las dos variables que resultaron significativas en el análisis bivariado.  
+
+```{r,echo=FALSE,fig.margin=TRUE,comment="",message=FALSE}
+data$Resultado_cultivo <-  factor(data$Resultado_cultivo,
+                              levels = c( "Neisseria meningitidis","Negativo","Streptococcus pneumoniae", "Haemophilus influenzae", "Klebsiella pneumoniae", "Listeria monocytogenes",
+                                         "Streptococcus equi","Streptococcus pyogenes"))
+rc99<-coxph(surv~Antibiotic+Cambio,data=data)
+rc99
+#summary(rc99)
+#levels(data$Agente_etiologico_detectado)
+#table(data$Agente_etiologico_detectado)
+#Resultado_cultivo
+#rcx<-coxph(surv~DOORMAT2,data=data)
+#rcx
+
+```  
+
+# Discusión  
+
+Tanto la **toma de antibióticos antes del  diagnóstico** y el hecho de **cambiar el tratamiento empírico en algun momento** de la evolución de la enfermedad se asocian de forma independiente con el tiempo hasta la muerte por meningitis. Con la toma de antibióticos el riesgo aumenta pero los pacientes a los que se cambia el tratamiento presentan un riesgo instantaneo de muerte por meningitis significativamente menor.  
+Por lo que respecta al **resultado del cultivo**, aunque el modelo no puede ajustar correctamente debido al alto número de categorías, es interesante analizar los resultados. Así, tomando como referencia el diagnóstico de infección por Neisseria meningitidis, el modelo sugiere que las infecciones por neumococo, Streptococcus equi, Klebsiella neumoniae y Listeria monocytogenes, asi como los pacientes con cultivo negativo (infección vírica), presentan un riesgo mayor de muerte por meningitis.  
+
+Un aspecto interesante para el estudio es el comportamiento de las puntuaciones y espectros DOORMAT con respecto a su asociación con la mortalidad. 
+Los espectros no ajustan bien en las regresiones, probablemente por el muy escaso numero de  individuos en algunas categorías, y por tanto, no podemos considerar valorar sus resultados.  
+Sin embargo, en el caso de las puntuaciones, si que tenemos hallazgos que pueden ser valiosos. Así en la regresión bivariada que incluye a la **puntuación DOORMAT 2** encontramos una asociación negativa (a más puntuacion menos riesgo de muerte instantanea por meningitis), pero con un p valor de 0.06, muy cercano a la significación estadística. Y ello acontece con solo 30 observaciones y 10 fallecimientos, una vez eliminados los casoos faltantes. Creo que esto hay que tenerlo muy presente en próximos análisis.  
+Con la **puntuación DOORMAT 1**, ocurre algo parecido. Aquí tenemos solo 21 casos con 7 fallecidos. A pesar de ello encontramos una asociación negativa con una p de 0.14. Tambien a tener en cuenta.
+Finalmente con la puntuación en el paso 3 ocurre que el rango de puntuaciones se estrecha mucho, es de 80 a 100, y 23 de los 30 casos tienen 100 puntos, con lo cual determinar si existen diferencias es sumamente complicado. 
+Se ha intentado incluir DOORMAT2 en el modelo multivariante, pero, logicamente empeora el modelo y no alcanza significación.   
+
+#### MODELOS BIVARIADOS PARA PUNTUACIONES DOORMAT
+
+```{r,echo=FALSE,fig.margin=TRUE,comment="",message=FALSE}
+coxph(surv~DOORMAT2,data=data)
+coxph(surv~DOORMAT1,data=data)
+```
+
+
+
+
+
+
+
