@@ -1,0 +1,239 @@
+---
+title: "Regresiones DOORMAT"
+author: "Carlos Martin Perez"
+date: "2022-12-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```  
+
+```{r , echo=FALSE, warning=FALSE,comment=F,include=FALSE}
+
+library(dplyr)
+library(knitr)
+library(gridExtra)
+library(openintro)
+library(formattable)
+library(MASS)
+library(ggplot2)
+library(readxl)
+library(pillar)
+library(kableExtra)
+library(lubridate)
+
+```    
+
+
+# Variable dependiente **puntuacion DOORMAT tras prueba rápida** 
+
+### Regresiones lineales simples con las variables numéricas y dicotómicas que alcanzan significación estadística  
+
+En un primer paso se ajustan regresiones lineales simples con TODAS las variables disponibles. De ellas, se seleccionan las que obtienen un valor de p menor de 0.05, que son las que se muestran en la siguiente tabla:   
+
+```{r , echo=FALSE, warning=FALSE,comment=F}
+load("/Users/carlosmartinperez/Desktop/MENINGITIS/BASE.RData")
+mening<-BASE
+#names(mening)
+mening = mening [ , c(36,1:35,37:68)]
+mening<-dplyr::select(mening,-c(Espectro_DOORMAT1,Espectro_DOORMAT2,Espectro_DOORMAT3,
+                                ED_0,ED_1,ED_2,ED_3,DOORMAT2,DOORMAT3,Muerte_atribuible,Provisional))
+
+```  
+
+```{r , echo=FALSE, warning=FALSE,comment=F,results='asis'}
+data_select<-function(dfs,Yvar,Xvar=NULL){
+  dfs<-dfs[,c(Yvar,Xvar)]
+  Xvar2<-2:(length(Xvar)+1)
+  return(dfs)
+}
+  
+
+combinar<-function(df,Xvar=NULL,numXVar=1){
+  
+  comb_Var<-t(combn(Xvar,numXVar));combinaciones<-comb_Var
+  
+  colnames(combinaciones)<-NULL
+  
+  options(warn=-1)
+  
+  get_names<-function(df,x){
+    outcome<-matrix(data=NA,nrow=nrow(x),ncol=ncol(x))
+    for(i in 1:nrow(x)){
+      outcome[i,1:ncol(x)]<-colnames(df)[x[i,1:ncol(x)]]
+    }
+    return(outcome)
+  }
+  combn_names<-get_names(df,combinaciones)
+  return(combn_names)
+}
+
+
+Mconf<-function(df, x)
+{
+  filas<-nrow(ccc)
+  materr2<-matrix(nrow=filas,ncol=3)
+  colnames(materr2)<-c( "Variables", "Coeficiente","p_valor")
+  #rownames(materr2)<-paste("Modelo",c(1:filas))
+  for (i in 1:nrow(ccc)){
+    xnam <- as.matrix(ccc[i,])
+    fmla <- as.formula(paste(colnames(mening[1]),"~", paste(xnam, collapse= "+")))
+    mod <- lm(fmla, data = mening)
+    
+    mod2<- glm(fmla, data = mening)
+    
+    df <- mod$data
+    prob = predict(mod,type = c("response"))
+    df$prob = prob
+    
+    fmla<-as.character(fmla)
+    coeficiente<-summary(mod)$coefficients[2]
+    pv<-summary(mod)$coefficients[8]
+    
+    #materr2[i,1]<-nrow(xnam)
+    materr2[i,1]<-fmla[3]
+    materr2[i,2]<-round(coeficiente,2)
+    materr2[i,3]<-round(pv,4)
+    
+  }
+  return(materr2)
+}
+
+ccc<-combinar(mening,c(2:57),1)
+
+d<-Mconf(mening,ccc)
+d<-as.data.frame(d)
+d$Coeficiente<-as.numeric(d$Coeficiente)
+d$p_valor<-as.numeric(d$p_valor)
+seleccion1<-dplyr::filter(d,p_valor<0.05)
+seleccion1%>%
+  kbl()%>%
+kable_paper("striped", full_width = F)
+```    
+
+```{r , echo=FALSE, warning=FALSE,comment=F}
+mening$Año <-  factor(mening$Año,levels = c( "2021","2020","2019","2018","2017"))
+ml200<- glm(DOORMAT1 ~ Año,data=mening) 
+s1<-summary(ml200)
+t1<-as.data.frame(s1$coef)
+
+t1%>%
+  kbl(caption="Regresion bivariada para Año")%>%
+kable_styling(full_width = F)
+
+```    
+
+### Modelos multivariantes
+
+```{r , echo=FALSE, warning=FALSE,comment=F}
+########################3
+bdred<-dplyr::select(mening,DOORMAT1,Glasgow,Virica,PCR2,UCI,rapida,diagetiol2,Neumococo,VVZ)
+
+########################
+data_select<-function(dfs,Yvar,Xvar=NULL){
+  dfs<-dfs[,c(Yvar,Xvar)]
+  Xvar2<-2:(length(Xvar)+1)
+  return(dfs)
+}
+  
+
+combinar<-function(df,Xvar=NULL,numXVar=1){
+  comb_Var<-t(combn(Xvar,numXVar));combinaciones<-comb_Var
+  colnames(combinaciones)<-NULL
+  options(warn=-1)
+  get_names<-function(df,x){
+    outcome<-matrix(data=NA,nrow=nrow(x),ncol=ncol(x))
+    for(i in 1:nrow(x)){
+      outcome[i,1:ncol(x)]<-colnames(df)[x[i,1:ncol(x)]]
+    }
+    return(outcome)
+  }
+  combn_names<-get_names(df,combinaciones)
+  return(combn_names)
+}
+
+
+Mconf<-function(df, x)
+{
+  filas<-nrow(ccc)
+  materr2<-matrix(nrow=filas,ncol=5)
+  colnames(materr2)<-c( "Nº var", "Variables", "R2","AIC","RSE")
+  rownames(materr2)<-paste("Modelo",c(1:filas))
+  for (i in 1:nrow(ccc)){
+    xnam <- as.matrix(ccc[i,])
+    fmla <- as.formula(paste(colnames(bdred[1]),"~", paste(xnam, collapse= "+")))
+    mod <- lm(fmla, data = bdred)
+    
+    mod2<- glm(fmla, data = bdred)
+    
+    df <- mod$data
+    prob = predict(mod,type = c("response"))
+    df$prob = prob
+    
+    fmla<-as.character(fmla)
+    r2<-summary(mod)$r.squared
+    aic<-summary(mod2)$aic
+    rse<-summary(mod)$sigma
+    materr2[i,1]<-nrow(xnam)
+    materr2[i,2]<-fmla[3]
+    materr2[i,3]<-round(r2,3)
+    materr2[i,4]<-round(aic,1)
+    materr2[i,5]<-round(rse,1)
+  }
+  return(materr2)
+}
+
+ccc<-combinar(bdred,c(2:9),1)
+d<-Mconf(bdred,ccc)
+#d
+
+ccc<-combinar(bdred,c(2:9),2)
+dd<-Mconf(bdred,ccc)
+#dd
+
+ccc<-combinar(bdred,c(2:9),3)
+ddd<-Mconf(bdred,ccc)
+#ddd 
+
+ccc<-combinar(bdred,c(2:9),4)
+dddd<-Mconf(bdred,ccc)
+#dddd
+
+
+ccc<-combinar(bdred,c(2:9),5)
+ddddd<-Mconf(bdred,ccc)
+#ddddd
+
+ccc<-combinar(bdred,c(2:9),6)
+dddddd<-Mconf(bdred,ccc)
+#dddddd
+ccc<-combinar(bdred,c(2:9),7)
+ddddddd<-Mconf(bdred,ccc)
+
+final<-rbind(d,dd,ddd,dddd,ddddd,dddddd,ddddddd)
+final<-as.data.frame(final)
+final<-arrange(final,RSE)
+finalr<-slice(final,1:5)
+finalr%>%
+kbl(caption="Los 5 mejores modelos de todos los posibles")%>%
+kable_styling(full_width = F)   
+```    
+
+UN buen  modelo final quedaría  como sigue:  
+
+```{r , echo=FALSE, warning=FALSE,comment=F}
+MX3<-lm(DOORMAT1~PCR2 + Glasgow,data=mening)
+smx<-summary(MX3)
+t7<-as.data.frame(smx$coefficients)
+t7%>%
+  kbl(caption="Regresion multivariante")%>%
+kable_styling(full_width = F)
+```  
+
+**Interpretación:**  
+
+El uso de la PCR en el diagnóstico rápido se asocia con puntuaciones DOORMAT más altas, y esto independientemente de la gravedad del paciente expresada con la puntuación de la escala Glasgow.  
+Concretamente, los tratamientos de los pacientes en los que se usa PCR tienen, de media,  una puntucion DOORMAT tras prueba rápida 13.3 puntos más alta.  
+
+
