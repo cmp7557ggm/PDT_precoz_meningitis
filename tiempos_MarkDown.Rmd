@@ -1,0 +1,831 @@
+---
+title: "Tiempos"
+author: "Carlos Martin Perez"
+date: "2022-11-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r , echo=FALSE, warning=FALSE,comment=F,include=FALSE}
+
+library(dplyr)
+library(knitr)
+library(gridExtra)
+library(openintro)
+library(formattable)
+library(MASS)
+library(ggplot2)
+library(readxl)
+library(pillar)
+library(kableExtra)
+library(lubridate)
+
+```
+
+## Introducción
+
+En esta sección se analizan los periodos de tiempo transcurridos desde el diagnóstico inicial de meningitis o desde la toma de muestra de líquido cefalorraquídeo hasta determinados eventos, que se pueden dividir en hitos clínicos y en hitos dentro del circuito de microbiología.
+
+Los puntos de interés desde el punto de vista clínico serán la toma de muestra del LCR, el inicio del tratamiento empírico si lo hay, el comienzo de los tres tratamientos dirigidos tras los distintos informes microbiológicos , y el alta o fallecimiento del paciente.
+
+Dentro del circuito de microbiología interesa conocer el tiempo transcurrido desde el diagnóstico hasta la recepción de la muestra de LCR en el laboratorio, el tiempo hasta el informe de la prueba rápida, el tiempo hasta que se produce el diagnóstico etiológico y el tiempo transcurrido hasta el informe final.
+
+### Tiempos clínicos
+
+```{r , echo=FALSE, warning=FALSE,include=FALSE}
+
+mening <- read_xlsx("/Users/carlosmartinperez/Desktop/MENINGITIS/Meningitis pre-intervención.xlsx",sheet=2)
+
+fechas<- read_xlsx("/Users/carlosmartinperez/Desktop/MENINGITIS/Meningitis pre-intervención.xlsx",sheet=4)
+
+lcr<-as.duration(as.period(interval(mening$Fecha_h_meningitis , mening$Fecha_h_LCR)))
+lcr<-ifelse(lcr<0,0,lcr)
+lcr<-round(lcr/3600,1)
+
+emp<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_h_empirico)))
+emp<-ifelse(emp<0,0,emp)
+emp<-round(emp/3600,1)
+
+dirigido1<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_h_dirigido1)))
+dirigido1<-ifelse(dirigido1<0,0,dirigido1)
+dirigido1<-round(dirigido1/3600,1)
+
+dirigido2<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_h_dirigido2)))
+dirigido2<-ifelse(dirigido2<0,0,dirigido2)
+dirigido2<-round(dirigido2/3600,1)
+
+dirigido3<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_h_dirigido3)))
+dirigido3<-ifelse(dirigido3<0,0,dirigido3)
+dirigido3<-round(dirigido3/3600,1)
+
+alta<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_h_alta)))
+alta<-ifelse(alta<0,0,alta)
+alta<-round(alta/3600,1)
+
+rapidat<-as.duration(as.period(interval(fechas$Fecha_h_rapida , fechas$Fecha_h_dirigido1)))
+rapidat<-ifelse(rapidat<0,0,rapidat)
+rapidat<-round(rapidat/3600,1)
+
+rapida<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_h_rapida)))
+rapida<-ifelse(rapida<0,0,rapida)
+rapida<-round(rapida/3600,1)
+
+provi<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_h_provi)))
+provi<-ifelse(provi<0,0,provi)
+provi<-round(provi/3600,1)
+
+recepcion<-as.duration(as.period(interval(fechas$Fecha_h_meningitis , fechas$Fecha_h_recepcion)))
+recepcion<-ifelse(recepcion<0,0,recepcion)
+recepcion<-round(recepcion/3600,1)
+
+final<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_h_resultado_final)))
+final<-ifelse(final<0,0,final)
+final<-round(final/3600,1)
+
+cambiodat<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$Fecha_cambio)))
+cambiodat<-ifelse(cambiodat<0,0,cambiodat)
+cambiodat<-round(cambiodat/3600,1)
+
+diagetiol<-as.duration(as.period(interval(fechas$Fecha_h_LCR , fechas$fecha_diag_etiol)))
+diagetiol<-ifelse(diagetiol<0,0,diagetiol)
+diagetiol<-round(diagetiol/3600,1)
+
+diagetiol2<-as.duration(as.period(interval(fechas$Fecha_h_rapida , fechas$fecha_diag_etiol)))
+diagetiol2<-ifelse(diagetiol2<0,0,diagetiol2)
+diagetiol2<-round(diagetiol2/3600,1)
+
+tiempo<-as.duration(as.period(interval(fechas$Fecha_h_meningitis , fechas$Fecha_h_alta)))
+tiempo<-ifelse(tiempo<0,0,tiempo)
+tiempo<-round(tiempo/3600,1)
+
+```
+
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+
+tabla1<-matrix(c(round(mean(lcr),1),median(lcr),min(lcr),max(lcr),
+
+round(mean(emp,na.rm=T),1),median(emp,na.rm=T),min(emp,na.rm=T),max(emp,na.rm=T),
+
+round(mean(dirigido1,na.rm=T),1),median(dirigido1,na.rm=T),min(dirigido1,na.rm=T),max(dirigido1,na.rm=T),
+
+round(mean(dirigido2,na.rm=T),1),median(dirigido2,na.rm=T),min(dirigido2,na.rm=T),max(dirigido2,na.rm=T),
+
+round(mean(dirigido3,na.rm=T),1),median(dirigido3,na.rm=T),min(dirigido3,na.rm=T),max(dirigido3,na.rm=T),
+
+round(mean(rapidat,na.rm=T),1),median(rapidat,na.rm=T),min(rapidat,na.rm=T),max(rapidat,na.rm=T),
+
+round(mean(cambiodat,na.rm=T),1),median(cambiodat,na.rm=T),min(cambiodat,na.rm=T),max(cambiodat,na.rm=T),
+
+round(mean(alta,na.rm=T),1),median(alta,na.rm=T),min(alta,na.rm=T),max(alta,na.rm=T),
+
+round(mean(tiempo,na.rm=T),1),median(tiempo,na.rm=T),min(tiempo,na.rm=T),max(tiempo,na.rm=T)),ncol=4,byrow = T)
+
+colnames(tabla1)<- c("Media","Mediana","Mínimo","Máximo")
+
+rownames(tabla1)<-c("Obtención LCR","LCR -> tto. empírico","LCR -> tto. dirigido 1","LCR -> tto. dirigido 2",
+
+"LCR -> tto. dirigido 3","Desde prueba rapida a dirigido 1",
+
+"LCR -> cualquier cambio de tratamiento","LCR -> alta o exitus",
+"Tiempo de estancia en hospital")
+
+tabla2<-matrix(c( round(mean(recepcion,na.rm=T),1),median(recepcion,na.rm=T),min(recepcion,na.rm=T),max(recepcion,na.rm=T),
+
+round(mean(rapida,na.rm=T),1),median(rapida,na.rm=T),min(rapida,na.rm=T),max(rapida,na.rm=T),
+
+round(mean(provi,na.rm=T),1),median(provi,na.rm=T),min(provi,na.rm=T),max(provi,na.rm=T),
+
+round(mean(diagetiol,na.rm=T),1),median(diagetiol,na.rm=T),min(diagetiol,na.rm=T),max(diagetiol,na.rm=T),
+
+round(mean(diagetiol2,na.rm=T),1),median(diagetiol2,na.rm=T),min(diagetiol2,na.rm=T),max(diagetiol2,na.rm=T),
+
+round(mean(final,na.rm=T),1),median(final,na.rm=T),min(final,na.rm=T),max(final,na.rm=T)),ncol=4,byrow = T)
+
+colnames(tabla2)<- c("Media","Mediana","Mínimo","Máximo")
+
+rownames(tabla2)<-c( "Desde diagnóstico a recepcion muestra","LCR -> informe rapido","LCR -> informe provisional","LCR -> diagnóstico etiológico","Prueba rápida <- diagnóstico etiológico" , "LCR -> informe final")
+
+tabla1%>%
+
+kbl(caption="Tiempos medidos en horas")%>%
+
+kable_styling()
+
+```
+
+### Tiempos en el circuito de Microbiología
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+
+tabla2%>%
+kbl(caption="Tiempos medidos en horas")%>%
+kable_styling()
+
+```
+
+### Discusión
+
+En el análisis de los tiempos de respuesta subyace una cuestión clave: ¿Se acortan estos tiempos de respuesta al introducir entre las técnicas de diagnóstico rápido la PCR?.
+
+Para responder a esta pregunta debemos de ser cautos a la hora de escoger la variable respuesta (¿Que tiempo es adecuado para medir la hipotética mejoría?). Las alternativas mas adecuadas, tomando como punto de partida a toma de muestra de LCR, parecen las siguientes :
+
+
+. Tiempo hasta que se consigue un diagnóstico etiológico (tras prueba rapida o tras cultivo)
+
+. Tiempo hasta que se produzca cualquier cambio en el tratamiento empírico hacia tratamientos dirigidos
+
+. Tiempo transcurrido desde la toma de LCR hasta el informe final de microbiología. 
+
+Tambien puede ser intereante analizar eltiempo total de estancia hospitalaria, es decir, desde el momento del diagnóstico hasta el alta o el fallecimiento del paciente.
+
+
+Por otro lado, la variable explicativa debe recoger la inroducción de la PCR como tecnica diagnostica rápida como factor determinante de las posibles diferencias en los tiempos. Hay varias opciones para ello. La más simple sería construir una variable dicotomica que recoja la respuesta a la pregunta ¿se ha utilizado PCR? (SI/NO). Pero tambien es interesante analizar como evolucionan los tiempos durante los distintos años, por lo que probaremos con el año como variable categórica explicativa y su versión dicotomizada. También analizaremos las diferencias entre las meningitis bacterianas y las víricas.  Las opciones quedan asi:
+
+. PCR (Si/No)
+
+. Año
+
+. Año a partir de 2019
+
+. Tipo de meningitis (Virica / bacteriana)  
+
+### El año como variable explicativa
+
+#### Tablas de tiempos por años
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+
+datosfeclin<-matrix(c(cambiodat,diagetiol,diagetiol2,final,tiempo),ncol =5)
+colnames(datosfeclin)<-c("Cambio","Diagetol","Diagetol2" ,"Final","Estancia")
+datosfeclin<-as.data.frame(datosfeclin)
+datosfeclin$Año<-fechas$Año
+
+df17<-dplyr::filter(datosfeclin,Año==2017)
+df18<-dplyr::filter(datosfeclin,Año==2018)
+df19<-dplyr::filter(datosfeclin,Año==2019)
+df20<-dplyr::filter(datosfeclin,Año==2020)
+df21<-dplyr::filter(datosfeclin,Año==2021)
+
+
+m17_3<-median(df17$Cambio,na.rm = T)
+m17_4<-median(df17$Diagetol,na.rm = T)
+m17_5<-median(df17$Diagetol2,na.rm = T)
+m17_6<-median(df17$Final,na.rm = T)
+m17_7<-median(df17$Estancia,na.rm = T)
+
+m18_3<-median(df18$Cambio,na.rm = T)
+m18_4<-median(df18$Diagetol,na.rm = T)
+m18_5<-median(df18$Diagetol2,na.rm = T)
+m18_6<-median(df18$Final,na.rm = T)
+m18_7<-median(df18$Estancia,na.rm = T)
+
+m19_3<-median(df19$Cambio,na.rm = T)
+m19_4<-median(df19$Diagetol,na.rm = T)
+m19_5<-median(df19$Diagetol2,na.rm = T)
+m19_6<-median(df19$Final,na.rm = T)
+m19_7<-median(df19$Estancia,na.rm = T)
+
+m20_3<-median(df20$Cambio,na.rm = T)
+m20_4<-median(df20$Diagetol,na.rm = T)
+m20_5<-median(df20$Diagetol2,na.rm = T)
+m20_6<-median(df20$Final,na.rm = T)
+m20_7<-median(df20$Estancia,na.rm = T)
+m20_7
+
+m21_3<-median(df21$Cambio,na.rm = T)
+m21_4<-median(df21$Diagetol,na.rm = T)
+m21_5<-median(df21$Diagetol2,na.rm = T)
+m21_6<-median(df21$Final,na.rm = T)
+m21_7<-median(df21$Estancia,na.rm = T)
+m21_6
+
+bd1<-matrix(c(m17_3,m17_4,m17_5,m17_6,m17_7,
+              m18_3,m18_4,m18_5,m18_6,m18_7,
+              m19_3,m19_4,m19_5,m19_6,m19_7,
+              m20_3,m20_4,m20_5,m20_6,m20_7,
+              m21_3,m21_4,m21_5,m21_6,m21_7),ncol =5,byrow = T)
+
+colnames(bd1)<-c("Cambio","Diagetol","Diagetol2", "Final","Estancia")
+
+rownames(bd1)<-c(2017,2018,2019,2020,2021)
+
+bd1%>%
+kbl(caption="Medianas de tiempos medidos en horas")%>%
+kable_styling()%>%
+footnote(
+general = c("Cambio: Tiempo desde LCR a cualquier cambio de tto.", "Diagetol: Tiempo desde LCR a diagnóstico etiológico","Diagetol2: Tiempo desde prueba rápida a diagnóstico etiológico", "Final: Tiempo hasta el informe final microbiología"))
+
+```    
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+
+m17_3<-mean(df17$Cambio,na.rm = T)
+m17_4<-mean(df17$Diagetol,na.rm = T)
+m17_5<-mean(df17$Diagetol2,na.rm = T)
+m17_6<-mean(df17$Final,na.rm = T)
+m17_7<-mean(df17$Estancia,na.rm = T)
+
+m18_3<-mean(df18$Cambio,na.rm = T)
+m18_4<-mean(df18$Diagetol,na.rm = T)
+m18_5<-mean(df18$Diagetol2,na.rm = T)
+m18_6<-mean(df18$Final,na.rm = T)
+m18_7<-mean(df18$Estancia,na.rm = T)
+
+m19_3<-mean(df19$Cambio,na.rm = T)
+m19_4<-mean(df19$Diagetol,na.rm = T)
+m19_5<-mean(df19$Diagetol2,na.rm = T)
+m19_6<-mean(df19$Final,na.rm = T)
+m19_7<-mean(df19$Estancia,na.rm = T)
+
+m20_3<-mean(df20$Cambio,na.rm = T)
+m20_4<-mean(df20$Diagetol,na.rm = T)
+m20_5<-mean(df20$Diagetol2,na.rm = T)
+m20_6<-mean(df20$Final,na.rm = T)
+m20_7<-mean(df20$Estancia,na.rm = T)
+
+
+m21_3<-mean(df21$Cambio,na.rm = T)
+m21_4<-mean(df21$Diagetol,na.rm = T)
+m21_5<-mean(df21$Diagetol2,na.rm = T)
+m21_6<-mean(df21$Final,na.rm = T)
+m21_7<-mean(df21$Estancia,na.rm = T)
+
+bd1<-matrix(c(m17_3,m17_4,m17_5,m17_6,m17_7,
+m18_3,m18_4,m18_5,m18_6,m18_7,
+m19_3,m19_4,m19_5,m19_6,m19_7,
+m20_3,m20_4,m20_5,m20_6,m20_7,
+m21_3,m21_4,m21_5,m21_6,m21_7),ncol =5,byrow = T)
+
+
+
+colnames(bd1)<-c("Cambio","Diagetol","Diagetol2", "Final","Estancia")
+
+rownames(bd1)<-c(2017,2018,2019,2020,2021)
+
+bd1%>%
+kbl(caption="Medias de tiempos medidos en horas")%>%
+kable_styling()%>%
+footnote(
+general = c("Cambio: Tiempo desde LCR a cualquier cambio de tto.", "Diagetol: Tiempo desde LCR a diagnóstico etiológico","Diagetol2: Tiempo desde prueba rápida a diagnóstico etiológico", "Final: Tiempo hasta el informe final microbiología"))
+```
+
+
+
+
+La pregunta clave es si existen diferencias estadísticamente significativas entre los distintos años. Para responder a esta cuestión utilizaremos los estadisticos de contraste al uso: T de Sudent y Wilcoxon para variables con dos categorías, y anova o Kruskal-Walis para variables con más de dos categorías.
+
+
+
+```{r , echo=FALSE, warning=FALSE}
+
+datos<-matrix(c(lcr,emp,dirigido1,dirigido2,dirigido3,alta,rapidat,rapida,recepcion,provi,final,cambiodat,diagetiol,diagetiol2,tiempo),ncol= 15)
+colnames(datos)<-c("lcr","emp", "dirigido1","dirigido2","dirigido3", "alta","rapidat","rapida","recepcion","provi","final",
+"cambiodat","diagetiol","diagetiol2","tiempo")
+
+datos<-as.data.frame(datos)
+save("datos", file="/Users/carlosmartinperez/Desktop/MENINGITIS/datos_tiempos.RData")
+
+datos$PCR2<-mening$PCR2
+
+datos$Año<-mening$Año
+
+ulti<-mening$Año
+
+ulti2<-mening$Año
+
+ulti<-ifelse(ulti>2019 & datos$PCR2=="Si","Si","No")
+
+ulti2<-ifelse(ulti2>2019,"Si","No")
+
+datos$ulti<-ulti
+
+datos$ulti2<-ulti2
+
+datos$Virica<-mening$Virica
+
+datos$Año<-as.factor(datos$Año)
+
+datos$PCR2<-as.factor(datos$PCR2)
+
+datos$ulti<-as.factor(datos$ulti)
+
+datos$ulti2<-as.factor(datos$ulti2)
+
+datos$Virica<-as.factor(datos$Virica)
+
+```
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+
+k5<-summary(aov(lm(datos$final~datos$Año)))
+k2<-kruskal.test(datos$rapidat,datos$Año)
+k1<-kruskal.test(datos$dirigido1,datos$Año)
+k3<-kruskal.test(datos$cambiodat,datos$Año)
+k4<-kruskal.test(datos$diagetiol,datos$Año)
+k6<-kruskal.test(datos$diagetiol2,datos$Año)
+k7<-kruskal.test(datos$tiempo,datos$Año)
+krus1<-matrix(c(
+k3$statistic,k3$p.value,
+k4$statistic,k4$p.value,
+k6$statistic,k6$p.value,
+k7$statistic,k7$p.value),ncol=2,byrow = T)
+colnames(krus1)<-c("KW Chi 2","p valor")
+rownames(krus1)<-c("Desde LCR a cualquier cambio de tto.","Desde LCR a diagnóstico etiológico"," Desde prueba rapida a diagnóstico etiológico","Estancia en hospital")
+
+krus1%>%
+kbl(caption="Kruskal Wallis test")%>%
+kable_styling()
+
+```  
+
+**Anova de un factor para tiempo desde LCR a informe final (distribución normal)**
+```{r , echo=FALSE, warning=FALSE}
+k5
+```
+
+
+Como es sabido, tanto el test KW como ANOVA nos indican si hay diferencias entre las distintas categorías (en este caso entre los años), pero no nos indica entre qué categorías existen diferencias significativas. Para ello, y para los tiempos con test significativo, implementamos el test de Tukey que hace multiples comparaciones entre las medias de cada categoría.
+
+**Informe final 
+segun año. Tukey multiple comparisons of means (IC 95%)**
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+fmv <-aov(lm(datos$final~datos$Año))
+
+intervals = TukeyHSD(fmv)
+
+intervals$`datos$Año`%>%
+kbl(caption="Tukey HSD Informe final")%>%
+kable_styling()
+```   
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+plot(datos$Año,datos$final,main="Tiempo hasta resultado final según año",xlab = "Año", ylab = "Tiempo en horas")
+```    
+
+
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+fmv2<-aov(lm(datos$diagetiol2 ~datos$Año))
+
+intervals2 = TukeyHSD(fmv2)
+
+intervals2$`datos$Año`%>%
+kbl(caption="Tukey HSD Diagnóstico etiológico 2")%>%
+kable_styling()
+```  
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+plot(datos$Año,datos$diagetiol2,main="Tiempo desde prueba rapida a diagnóstico etiológico según año",xlab = "Año", ylab = "Tiempo en horas")
+```    
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+fmv3<-aov(lm(datos$cambiodat ~datos$Año))
+
+intervals3 = TukeyHSD(fmv3)
+
+intervals3$`datos$Año`%>%
+kbl(caption="Tukey HSD Cambio de tratamiento")%>%
+kable_styling()
+```  
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+plot(datos$Año,datos$cambiodat,main="Tiempo desde LCR a cambio de tratamiento según año",xlab = "Año", ylab = "Tiempo en horas")
+```  
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+fmv3<-aov(lm(datos$tiempo ~datos$Año))
+
+intervals3 = TukeyHSD(fmv3)
+
+intervals3$`datos$Año`%>%
+kbl(caption="Tukey HSD tiempo de estancia")%>%
+kable_styling()
+```  
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+plot(datos$Año,datos$tiempo,main="Tiempo de estancia según año",xlab = "Año", ylab = "Tiempo en horas")
+```    
+
+#### Comentarios  
+
+Además de los tiempos analizados hasta ahora, se asocian con el año el tiempo hasta la instauración del tratamiento empírico y el periodo transcurrido desde la toma de LCR hasta la realización de la prueba rápida:    
+
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+k8<-kruskal.test(datos$emp,datos$Año)
+k9<-kruskal.test(datos$rapida,datos$Año)
+
+
+krus5<-matrix(c(
+k8$statistic,k8$p.value,
+k9$statistic,k9$p.value
+),ncol=2,byrow = T)
+colnames(krus5)<-c("KW Chi 2","p valor")
+rownames(krus5)<-c("Desde LCR a tratamiento empírico.","Desde LCR a prueba rápida")
+
+krus5%>%
+kbl(caption="Kruskal Wallis test")%>%
+kable_styling()
+```  
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+plot(datos$Año,datos$emp,main="Tiempo desde LCR a tratamiento empírico según año",xlab = "Año", ylab = "Tiempo en horas")  
+
+plot(datos$Año,datos$rapida,main="Tiempo desde LCR a prueba rápida según año",xlab = "Año", ylab = "Tiempo en horas")  
+```   
+
+
+### Pacientes atendidos a partir de 2020 frente al resto de pacientes
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+
+u2final<- datos %>% filter(ulti2 == "Si") %>% pull(final)
+u2rapidat<- datos %>% filter(ulti2 == "Si") %>% pull(rapidat)
+u2dirigido1<- datos %>% filter(ulti2 == "Si") %>% pull(dirigido1)
+u2cambiodat<-datos %>% filter(ulti2 == "Si") %>% pull(cambiodat)
+u2diagetiol<-datos %>% filter(ulti2 == "Si") %>% pull(diagetiol)
+u2tiempo<-datos %>% filter(ulti2 == "Si") %>% pull(tiempo)
+u2finalno<- datos %>% filter(ulti2 == "No") %>% pull(final)
+u2rapidatno<- datos %>% filter(ulti2 == "No") %>% pull(rapidat)
+u2dirigido1no<- datos %>% filter(ulti2 == "No") %>% pull(dirigido1)
+u2cambiodatno<-datos %>% filter(ulti2 == "No") %>% pull(cambiodat)
+u2diagetiolno<-datos %>% filter(ulti2 == "No") %>% pull(diagetiol)
+u2diagetiol2<-datos %>% filter(ulti2 == "Si") %>% pull(diagetiol2)
+u2diagetiol2no<-datos %>% filter(ulti2 == "No") %>% pull(diagetiol2)
+u2tiempono<-datos %>% filter(ulti2 == "No") %>% pull(tiempo)
+#____________________________________________________________________
+u2m<-matrix(c(mean(u2final,na.rm=T),median(u2final,na.rm=T),
+mean(u2finalno,na.rm=T),median(u2finalno,na.rm=T)),ncol=2,byrow = T)
+colnames(u2m)<-c("Media","Mediana")
+rownames(u2m)<-c("2020 o posterior","Antes de 2020")
+
+u2m%>%
+kbl(caption="Tiempo desde LCR hasta informe final")%>%
+kable_styling()  
+
+plot(datos$ulti2,datos$final, main="Tiempo hasta el informe final antes /despues de 2020",
+     xlab = "Periodo", ylab = "Tiempo en horas",xaxt = "n")
+axis(1, at= 1:2,labels = c("Antes 2020","2020 o posterior"))
+#____________________________________________________________________
+u2c<-matrix(c(mean(u2cambiodat,na.rm=T),median(u2cambiodat,na.rm=T),
+mean(u2cambiodatno,na.rm=T),median(u2cambiodatno,na.rm=T)),ncol=2,byrow = T)
+colnames(u2c)<-c("Media","Mediana")
+rownames(u2c)<-c("2020 o posterior","Antes de 2020")
+
+u2c%>%
+kbl(caption="Tiempo desde LCR a primer cambio de tratamiento")%>%
+kable_styling()  
+
+plot(datos$ulti2,datos$cambiodat, main="Tiempo hasta cambio de tratamiento antes /despues de 2020",
+     xlab = "Periodo", ylab = "Tiempo en horas",xaxt = "n")
+axis(1, at= 1:2,labels = c("Antes 2020","2020 o posterior"))
+#____________________________________________________________________
+u2di<-matrix(c(mean(u2diagetiol,na.rm=T),median(u2diagetiol,na.rm=T),
+mean(u2diagetiolno,na.rm=T),median(u2diagetiolno,na.rm=T)),ncol=2,byrow = T)
+colnames(u2di)<-c("Media","Mediana")
+rownames(u2di)<-c("2020 o posterior","Antes de 2020")
+
+u2di%>%
+kbl(caption="Tiempo desde LCR a diagnostico etiológico")%>%
+kable_styling() 
+
+plot(datos$ulti2,datos$diagetiol, main="Tiempo hasta diagnóstico etiológico antes /despues de 2020",
+     xlab = "Periodo", ylab = "Tiempo en horas",xaxt = "n")
+axis(1, at= 1:2,labels = c("Antes 2020","2020 o posterior"))
+
+#____________________________________________________________________
+u2di2<-matrix(c(mean(u2diagetiol2,na.rm=T),median(u2diagetiol2,na.rm=T),
+mean(u2diagetiol2no,na.rm=T),median(u2diagetiol2no,na.rm=T)),ncol=2,byrow = T)
+colnames(u2di2)<-c("Media","Mediana")
+rownames(u2di2)<-c("2020 o posterior","Antes de 2020")
+
+u2di2%>%
+kbl(caption="Tiempo desde LCR a diagnostico etiológico 2")%>%
+kable_styling() 
+
+plot(datos$ulti2,datos$diagetiol2, main="Tiempo hasta diagnóstico etiológico 2 antes /despues de 2020",
+     xlab = "Periodo", ylab = "Tiempo en horas",xaxt = "n")
+axis(1, at= 1:2,labels = c("Antes 2020","2020 o posterior"))
+#____________________________________________________________________
+u2t2<-matrix(c(mean(u2tiempo,na.rm=T),median(u2tiempo,na.rm=T),
+mean(u2tiempono,na.rm=T),median(u2tiempono,na.rm=T)),ncol=2,byrow = T)
+colnames(u2t2)<-c("Media","Mediana")
+rownames(u2t2)<-c("2020 o posterior","Antes de 2020")
+
+u2t2%>%
+kbl(caption="Tiempo de estancia")%>%
+kable_styling() 
+
+plot(datos$ulti2,datos$tiempo, main="Tiempo de estancia antes /despues de 2020",
+     xlab = "Periodo", ylab = "Tiempo en horas",xaxt = "n")
+axis(1, at= 1:2,labels = c("Antes 2020","2020 o posterior"))
+
+```
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+
+w5<-wilcox.test(u2final,u2finalno)
+
+w2<-wilcox.test(u2rapidat,u2rapidatno)
+
+w1<-wilcox.test(u2dirigido1,u2dirigido1no)
+
+w3<-wilcox.test(u2cambiodat,u2cambiodatno)
+
+w4<-wilcox.test(u2diagetiol,u2diagetiolno)
+w6<-wilcox.test(u2diagetiol2,u2diagetiol2no)
+w7<-wilcox.test(u2tiempo,u2tiempono)
+
+wil1<-matrix(c(
+w3$statistic,w3$p.value,
+w4$statistic,w4$p.value,
+w5$statistic,w5$p.value,
+w6$statistic,w6$p.value,
+w7$statistic,w7$p.value),ncol=2,byrow = T)
+colnames(wil1)<-c("W","p valor")
+rownames(wil1)<-c("Desde LCR a cualquier cambio de tto.","Desde LCR a diagnóstico etiológico"," Desde LCR hasta informe final ","Desde prueba rápida a diagnóstico etiológico","Estancia en hospital")
+
+wil1%>%
+kbl(caption="Wilcoxon test para pacientes de 2020-2021 vs anteriores")%>%
+kable_styling()
+
+```
+
+
+### Pacientes con PCR realizada frente no realizada
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+
+u2final<- datos %>% filter(PCR2 == 1) %>% pull(final)
+u2rapidat<- datos %>% filter(PCR2 == 1) %>% pull(rapidat)
+u2dirigido1<- datos %>% filter(PCR2 == 1) %>% pull(dirigido1)
+u2cambiodat<-datos %>% filter(PCR2 == 1) %>% pull(cambiodat)
+u2diagetiol<-datos %>% filter(PCR2 == 1) %>% pull(diagetiol)
+u2diagetiol2<-datos %>% filter(PCR2 == 1) %>% pull(diagetiol2)
+u2tiempo<-datos %>% filter(PCR2 == 1) %>% pull(tiempo)
+
+u2finalno<- datos %>% filter(PCR2 == 0) %>% pull(final)
+u2rapidatno<- datos %>% filter(PCR2 == 0) %>% pull(rapidat)
+u2dirigido1no<- datos %>% filter(PCR2 == 0) %>% pull(dirigido1)
+u2cambiodatno<-datos %>% filter(PCR2 == 0) %>% pull(cambiodat)
+u2diagetiolno<-datos %>% filter(PCR2 == 0) %>% pull(diagetiol)
+u2diagetio2lno<-datos %>% filter(PCR2 == 0) %>% pull(diagetiol2)
+u2tiempono<-datos %>% filter(PCR2 == 0) %>% pull(tiempo)
+
+u2m<-matrix(c(mean(u2final,na.rm=T),median(u2final,na.rm=T),
+mean(u2finalno,na.rm=T),median(u2finalno,na.rm=T)),ncol=2,byrow = T)
+colnames(u2m)<-c("Media","Mediana")
+rownames(u2m)<-c("PCR Si","PCR No")
+
+u2m%>%
+kbl(caption="Tiempo desde LCR hasta informe final")%>%
+kable_styling()
+
+plot(datos$PCR2,datos$final, main="Tiempo hasta informe final con / sin PCR realizada",
+     xlab = "PCR", ylab = "Tiempo en horas",xaxt = "n")
+axis(1, at= 1:2,labels = c("No realizada","Realizada"))
+
+u2c<-matrix(c(mean(u2cambiodat,na.rm=T),median(u2cambiodat,na.rm=T),
+mean(u2cambiodatno,na.rm=T),median(u2cambiodatno,na.rm=T)),ncol=2,byrow = T)
+colnames(u2c)<-c("Media","Mediana")
+rownames(u2c)<-c("PCR Si","PCR No")
+
+u2c%>%
+kbl(caption="Tiempo desde LCR a primer cambio de tratamiento")%>%
+kable_styling()
+
+plot(datos$PCR2,datos$cambiodat, main="Tiempo hasta cambio de tto. con / sin PCR realizada",
+     xlab = "PCR", ylab = "Tiempo en horas",xaxt = "n")
+axis(1, at= 1:2,labels = c("No realizada","Realizada"))
+
+u2di<-matrix(c(mean(u2diagetiol,na.rm=T),median(u2diagetiol,na.rm=T),
+mean(u2diagetiolno,na.rm=T),median(u2diagetiolno,na.rm=T)),ncol=2,byrow = T)
+colnames(u2di)<-c("Media","Mediana")
+rownames(u2di)<-c("PCR Si","PCR No")
+
+u2di%>%
+kbl(caption="Tiempo desde LCR a diagnostico etiológico")%>%
+kable_styling()
+
+plot(datos$PCR2,datos$diagetiol, main="Tiempo hasta diagnóstico etiológico con / sin PCR realizada",
+     xlab = "PCR", ylab = "Tiempo en horas",xaxt = "n")
+axis(1, at= 1:2,labels = c("No realizada","Realizada"))
+
+u2di2<-matrix(c(mean(u2diagetiol2,na.rm=T),median(u2diagetiol2,na.rm=T),
+mean(u2diagetiol2no,na.rm=T),median(u2diagetiol2no,na.rm=T)),ncol=2,byrow = T)
+colnames(u2di2)<-c("Media","Mediana")
+rownames(u2di2)<-c("PCR Si","PCR No")
+
+u2di2%>%
+kbl(caption="Tiempo desde LCR a diagnostico etiológico")%>%
+kable_styling()
+
+plot(datos$PCR2,datos$diagetiol2, main="Tiempo hasta diagnóstico etiológico con / sin PCR realizada",
+     xlab = "PCR", ylab = "Tiempo en horas",xaxt = "n")
+axis(1, at= 1:2,labels = c("No realizada","Realizada"))
+
+u2t2<-matrix(c(mean(u2tiempo,na.rm=T),median(u2tiempo,na.rm=T),
+mean(u2tiempono,na.rm=T),median(u2tiempono,na.rm=T)),ncol=2,byrow = T)
+colnames(u2t2)<-c("Media","Mediana")
+rownames(u2t2)<-c("PCR Si","PCR No")
+
+u2t2%>%
+kbl(caption="Tiempo de estancia en hospital")%>%
+kable_styling()
+
+boxplot(datos$tiempo~datos$PCR2, main="Tiempo de estancia con / sin PCR realizada",
+     xlab = "PCR", ylab = "Tiempo en horas",xaxt = "n")
+axis(1, at= 1:2,labels = c("No realizada","Realizada"))
+
+```
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+
+w5<-wilcox.test(u2final,u2finalno)
+
+w2<-wilcox.test(u2rapidat,u2rapidatno)
+
+w1<-wilcox.test(u2dirigido1,u2dirigido1no)
+w3<-wilcox.test(u2cambiodat,u2cambiodatno)
+w4<-wilcox.test(u2diagetiol,u2diagetiolno)
+w6<-wilcox.test(u2diagetiol2,u2diagetiol2no)
+w7<-wilcox.test(u2tiempo,u2tiempono)
+
+wil1<-matrix(c(
+w3$statistic,w3$p.value,
+w4$statistic,w4$p.value,
+w5$statistic,w5$p.value,
+w6$statistic,w6$p.value,
+w7$statistic,w7$p.value),ncol=2,byrow = T)
+colnames(wil1)<-c("W","p valor")
+rownames(wil1)<-c("Desde LCR a cualquier cambio de tto.","Desde LCR a diagnóstico etiológico"," Desde LCR hasta informe final ","Desde prueba rápida a dignóstico etiológico","Estancia en hospital")
+
+wil1%>%
+kbl(caption="Wilcoxon test para pacientes con PCR frente a PCR no realizada")%>%
+kable_styling()
+
+```
+
+### Tipo de meningitis (Virica / Bacteriana)
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+
+u2final<- datos %>% filter(Virica == 1) %>% pull(final)
+u2cambiodat<-datos %>% filter(Virica == 1) %>% pull(cambiodat)
+u2diagetiol<-datos %>% filter(Virica == 1) %>% pull(diagetiol)
+u2diagetiol2<-datos %>% filter(Virica == 1) %>% pull(diagetiol2)
+u2tiempo<-datos %>% filter(Virica == 1) %>% pull(tiempo)
+
+u2finalno<- datos %>% filter(Virica == 0) %>% pull(final)
+u2cambiodatno<-datos %>% filter(Virica == 0) %>% pull(cambiodat)
+u2diagetiolno<-datos %>% filter(Virica == 0) %>% pull(diagetiol)
+u2diagetiol2no<-datos %>% filter(Virica == 0) %>% pull(diagetiol2)
+u2tiempono<-datos %>% filter(Virica == 0) %>% pull(tiempo)
+
+u2m<-matrix(c(mean(u2final,na.rm=T),median(u2final,na.rm=T),
+mean(u2finalno,na.rm=T),median(u2finalno,na.rm=T)),ncol=2,byrow = T)
+colnames(u2m)<-c("Media","Mediana")
+rownames(u2m)<-c("Vírica","Bacteriana")
+
+u2m%>%
+kbl(caption="Tiempo desde LCR hasta informe final")%>%
+kable_styling()
+
+plot(datos$Virica,datos$final, main="Tiempo hasta informe final virica / bacteriana",
+     xlab = "Tipo meningitis", ylab = "Tiempo en horas",xaxt = "n")
+#axis(1, at= 1:2,labels = c("Bacteriana","Virica"))
+
+u2c<-matrix(c(mean(u2cambiodat,na.rm=T),median(u2cambiodat,na.rm=T),
+mean(u2cambiodatno,na.rm=T),median(u2cambiodatno,na.rm=T)),ncol=2,byrow = T)
+colnames(u2c)<-c("Media","Mediana")
+rownames(u2c)<-c("Vírica","Bacteriana")
+
+u2c%>%
+kbl(caption="Tiempo desde LCR a primer cambio de tratamiento")%>%
+kable_styling()  
+
+plot(datos$Virica,datos$cambiodat, main="Tiempo hasta cambio de tto. virica / bacteriana",
+     xlab = "Tipo meningitis", ylab = "Tiempo en horas",xaxt = "n")
+axis(1, at= 1:2,labels = c("Bacteriana","Virica"))
+
+u2di<-matrix(c(mean(u2diagetiol,na.rm=T),median(u2diagetiol,na.rm=T),
+mean(u2diagetiolno,na.rm=T),median(u2diagetiolno,na.rm=T)),ncol=2,byrow = T)
+colnames(u2di)<-c("Media","Mediana")
+rownames(u2di)<-c("Vírica","Bacteriana")
+
+u2di%>%
+kbl(caption="Tiempo desde LCR a diagnostico etiológico")%>%
+kable_styling() 
+
+plot(datos$Virica,datos$diagetiol, main="Tiempo hasta diagnóstico etiológico virica / bacteriana",
+     xlab = "Tipo meningitis", ylab = "Tiempo en horas",xaxt = "n")
+axis(1, at= 1:2,labels = c("Bacteriana","Virica"))
+
+u2di2<-matrix(c(mean(u2diagetiol2,na.rm=T),median(u2diagetiol2,na.rm=T),
+mean(u2diagetiol2no,na.rm=T),median(u2diagetiol2no,na.rm=T)),ncol=2,byrow = T)
+colnames(u2di2)<-c("Media","Mediana")
+rownames(u2di2)<-c("Vírica","Bacteriana")
+
+u2di2%>%
+kbl(caption="Tiempo desde LCR a diagnostico etiológico 2")%>%
+kable_styling() 
+
+plot(datos$Virica,datos$diagetiol2, main="Tiempo hasta diagnóstico etiológico virica / bacteriana",
+     xlab = "Tipo meningitis", ylab = "Tiempo en horas",xaxt = "n")
+axis(1, at= 1:2,labels = c("Bacteriana","Virica"))
+
+u2t2<-matrix(c(mean(u2tiempo,na.rm=T),median(u2tiempo,na.rm=T),
+mean(u2tiempono,na.rm=T),median(u2tiempono,na.rm=T)),ncol=2,byrow = T)
+colnames(u2t2)<-c("Media","Mediana")
+rownames(u2t2)<-c("Vírica","Bacteriana")
+
+u2t2%>%
+kbl(caption="Tiempo de estancia en hospital")%>%
+kable_styling() 
+
+plot(datos$Virica,datos$tiempo, main="Tiempo de estancia virica / bacteriana",
+     xlab = "Tipo meningitis", ylab = "Tiempo en horas",xaxt = "n")
+axis(1, at= 1:2,labels = c("Bacteriana","Virica"))
+
+```
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+
+w5<-wilcox.test(u2final,u2finalno)
+w3<-wilcox.test(u2cambiodat,u2cambiodatno)
+w4<-wilcox.test(u2diagetiol,u2diagetiolno)
+w6<-wilcox.test(u2diagetiol2,u2diagetiol2no)
+w7<-wilcox.test(u2tiempo,u2tiempono)
+
+wil1<-matrix(c(
+w3$statistic,w3$p.value,
+w4$statistic,w4$p.value,
+w5$statistic,w5$p.value,
+w6$statistic,w6$p.value,
+w7$statistic,w7$p.value),ncol=2,byrow = T)
+colnames(wil1)<-c("W","p valor")
+rownames(wil1)<-c("Desde LCR a cualquier cambio de tto.","Desde LCR a diagnóstico etiológico"," Desde LCR hasta informe final ","Desde prueba rápida a dignóstico etiológico","Tiempo de estancia hospital")
+
+wil1%>%
+kbl(caption="Wilcoxon test meningitis vírica frente a bacteriana")%>%
+kable_styling()
+
+```   
+
+### CONCLUSIONES   
+
+Los tiempos hasta el diagnóstico etiológico y hasta el informe final son los más adecuados para medir la influencia de la introducción de las nuevas técnicas diagnósticas en la reducción de tiempos de respuesta. Ambos mejoran significativamente a lo largo del tiempo y con la introducción de la PCR.  
+
+El tiempo transcurrido hasta que se produce el primer cambio en el tratamiento empírico tambien tiende a disminuir con la introducción de las nuevas técnicas, pero ese cambio no alcanza la significación estadística.
+
+Parece que lo mas adecuado es utilizar los tiempos hasta el diagnóstico etiológico como variables respuesta de interés.
+
+## Análisis multivariante
+
+Parece interesante ajustar tres  regresiones lineales multivariantes, para determinar que variables  se asocian de forma independiente con el los distintos tiempos de interes.
+

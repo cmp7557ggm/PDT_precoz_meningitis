@@ -1,0 +1,430 @@
+---
+title: "Regresiones lineales tiempos"
+author: "Carlos Martin Perez"
+date: "2022-12-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r , echo=FALSE, warning=FALSE,comment=F,include=FALSE}
+
+library(dplyr)
+library(knitr)
+library(gridExtra)
+library(openintro)
+library(formattable)
+library(MASS)
+library(ggplot2)
+library(readxl)
+library(pillar)
+library(kableExtra)
+library(lubridate)
+
+```   
+
+# Variable dependiente tiempo hasta el resultado final  
+
+## regresiones simples con todas las variables numéricas y dicotómicas
+
+```{r , echo=FALSE, warning=FALSE,comment=F}
+
+mening <- read_xlsx("/Users/carlosmartinperez/Desktop/MENINGITIS/Meningitis pre-intervención.xlsx",sheet=2)
+
+mening$Resultado_cultivo <-  factor(mening$Resultado_cultivo,
+                                    levels = c("Streptococcus pneumoniae", "Neisseria meningitidis","Negativo", "Haemophilus influenzae", "Klebsiella pneumoniae", "Listeria monocytogenes",
+                                                "Streptococcus equi","Streptococcus pyogenes"))
+
+
+mening$Espectro_DOORMAT0 <-  factor(mening$Espectro_DOORMAT0,levels = c( "IV","III","I","0"))
+mening$Espectro_DOORMAT1<-  factor(mening$Espectro_DOORMAT1,levels = c( "IV","III","II","I"))
+mening$Espectro_DOORMAT2 <-  factor(mening$Espectro_DOORMAT2,levels = c( "IV","III","II","I"))
+mening$Espectro_DOORMAT3 <-  factor(mening$Espectro_DOORMAT3,levels = c( "III","II","I"))
+
+mening$tiempo<-as.duration(as.period(interval(mening$Fecha_h_meningitis , mening$Fecha_h_alta)))
+mening$tiempo<-ifelse(mening$tiempo<0,0,mening$tiempo)
+mening$tiempo<-round(mening$tiempo/3600,1)
+
+lcr<-as.duration(as.period(interval(mening$Fecha_h_meningitis , mening$Fecha_h_LCR)))
+lcr<-ifelse(lcr<0,0,lcr)
+lcr<-round(lcr/3600,1)
+mening$lcr<-lcr
+
+emp<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$Fecha_h_empirico)))
+emp<-ifelse(emp<0,0,emp)
+emp<-round(emp/3600,1)
+mening$emp<-emp  
+
+rapida<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$Fecha_h_rapida)))
+rapida<-ifelse(rapida<0,0,rapida)
+rapida<-round(rapida/3600,1)
+mening$rapida<-rapida
+
+recepcion<-as.duration(as.period(interval(mening$Fecha_h_meningitis , mening$Fecha_h_recepcion)))
+recepcion<-ifelse(recepcion<0,0,recepcion)
+recepcion<-round(recepcion/3600,1)
+mening$recepcion<-recepcion
+
+final<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$Fecha_h_resultado_final)))
+final<-ifelse(final<0,0,final)
+final<-round(final/3600,1)
+mening$final<-final
+
+cambiodat<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$Fecha_cambio)))
+cambiodat<-ifelse(cambiodat<0,0,cambiodat)
+cambiodat<-round(cambiodat/3600,1)
+mening$cambiodat<-cambiodat
+
+diagetiol<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$fecha_diag_etiol)))
+diagetiol<-ifelse(diagetiol<0,0,diagetiol)
+diagetiol<-round(diagetiol/3600,1)
+mening$diagetiol<-diagetiol
+
+diagetiol2<-as.duration(as.period(interval(mening$Fecha_h_rapida , mening$fecha_diag_etiol)))
+diagetiol2<-ifelse(diagetiol2<0,0,diagetiol2)
+diagetiol2<-round(diagetiol2/3600,1)
+mening$diagetiol2<-diagetiol2
+
+ulti2<-mening$Año
+ulti2<-ifelse(ulti2>2019,"Si","No")
+mening$ulti2<-ulti2
+
+mening$Año<-as.factor(mening$Año)
+mening$Año <-  factor(mening$Año,levels = c( "2021","2020","2019","2018","2017"))
+mening$ulti2<-as.factor(mening$ulti2)
+mening$Virica<-as.factor(mening$Virica) 
+
+##################################################
+#Eliminamos fechas y variables repetidas o no necesarias
+##################################################
+
+mening<-dplyr::select(mening,-c(Fecha_h_meningitis,Fecha_h_LCR,Fecha_h_empirico,Fecha_h_recepcion,                               Fecha_h_rapida, Fecha_h_resultado_final, Fecha_h_alta, Fecha_cambio, fecha_diag_etiol,NHC , Procedencia, Desde_observación, Desde_diag_LCR,Adquisición, TABP_tipo,Tipo_empirico , Desde_diag_empirico, Desde_diag_recepcion, Celulas, Hematies, PMN, Mono, Glucosa, Proteína, Tipo_prueba_rapida,Resultado_antigeno, Resultado_Gram, PCR, Tipo_dirigido1, Tipo_dirigido2, Tipo_dirigido3, Actividad1,Desde_meningitis_dirigido1,ACTIVO_dirigido2,Desde_diag_dirigido2,
+                            Desde_diag_final, ACTIVO_dirigido3,`Mortalidad(SINO)`, Fecha_h_ingreso, Fecha_h_dirigido1,Fecha_h_provi, Fecha_h_dirigido2, Fecha_h_dirigido3, Fecha_altaUCI, Perfil_DOORMAT,
+                                diagetiol,final,lcr,emp,rapida,recepcion,cambiodat,T_dirigido3_mixto,
+                                Diagnostico_sindromico))
+
+mening = mening [ , c(52,1:51,53)]
+
+#base de datos sin variables con mas de dos categorias
+mening_dos<-dplyr::select(mening,-c(Año,Espectro_DOORMAT0,Espectro_DOORMAT1,Espectro_DOORMAT2,
+                                    Espectro_DOORMAT3, Resultado_cultivo,Agente_etiologico_detectado))
+# base de datos con variables de mas de dos categorías
+mening_n<-dplyr::select(mening,c(diagetiol2,Año,Espectro_DOORMAT0,Espectro_DOORMAT1,Espectro_DOORMAT2,Espectro_DOORMAT3,Resultado_cultivo, Agente_etiologico_detectado))
+```
+
+
+```{r , echo=FALSE, warning=FALSE,comment=F}
+mening_dos <- mening_dos[lapply(mening_dos,length)>0]
+ ml1<- glm(diagetiol2 ~ Edad,data=mening_dos)                        
+ ml2<- glm(diagetiol2 ~ Sexo,data=mening_dos)                        
+ ml3<- glm(diagetiol2 ~ Charlson_Index,data=mening_dos)              
+ml4<- glm(diagetiol2 ~ charlson_Index3,data=mening_dos)             
+ml5<- glm(diagetiol2 ~ Smoking_history,data=mening_dos)             
+ml6<- glm(diagetiol2 ~ Drinking_history,data=mening_dos)            
+ml7<- glm(diagetiol2 ~ Diabetes,data=mening_dos)                    
+ml8<- glm(diagetiol2 ~ Hypertension,data=mening_dos)                
+ml9<- glm(diagetiol2 ~ Chronic_lung_disease,data=mening_dos)        
+ml10<- glm(diagetiol2 ~ OSA,data=mening_dos)                        
+ml11<- glm(diagetiol2 ~ Cerebrovascular_disease,data=mening_dos)    
+ml12<- glm(diagetiol2 ~ Cancer,data=mening_dos)                     
+ml13<- glm(diagetiol2 ~ Chronic_Kidney_disease,data=mening_dos)     
+ml14<- glm(diagetiol2 ~ Chronic_liver_impairment,data=mening_dos)   
+ml15<- glm(diagetiol2 ~ MIS,data=mening_dos)                        
+ml16<- glm(diagetiol2 ~ Residence,data=mening_dos)                  
+ml17<- glm(diagetiol2 ~ Statin,data=mening_dos)                     
+ml18<- glm(diagetiol2 ~ ACE_inhibitor_ARB,data=mening_dos)          
+ml19<- glm(diagetiol2 ~ Systemic_glucocorticoid,data=mening_dos)    
+ml20<- glm(diagetiol2 ~ oral_anticoagulant_warfarin,data=mening_dos)
+ml21<- glm(diagetiol2 ~ Antibiotic,data=mening_dos)                 
+#ml22<- glm(diagetiol2 ~ Diagnostico_sindromico,data=mening_dos)     
+ml23<- glm(diagetiol2 ~ TABP,data=mening_dos)                       
+ml24<- glm(diagetiol2 ~ T_empirico,data=mening_dos)                 
+ml25<- glm(diagetiol2 ~ T_em_combinado,data=mening_dos)             
+ml26<- glm(diagetiol2 ~ T_em_mixto,data=mening_dos)                 
+ml27<- glm(diagetiol2 ~ Actividad0,data=mening_dos)                 
+ml28<- glm(diagetiol2 ~ Resultado_prueba_rapida,data=mening_dos)    
+ml29<- glm(diagetiol2 ~ PCR2,data=mening_dos)                       
+ml30<- glm(diagetiol2 ~ Cambio_Tto1,data=mening_dos)                
+ml31<- glm(diagetiol2 ~ dirigido1_combinado,data=mening_dos)        
+ml32<- glm(diagetiol2 ~ dirigido1_mixto,data=mening_dos)            
+ml33<- glm(diagetiol2 ~ DOORMAT1,data=mening_dos)                   
+ml34<- glm(diagetiol2 ~ Provisional,data=mening_dos)                
+ml35<- glm(diagetiol2 ~ Cambio_Tto2,data=mening_dos)                
+ml36<- glm(diagetiol2 ~ T_dirigido2_combinado,data=mening_dos)      
+ml37<- glm(diagetiol2 ~ T_dirigido2_mixto,data=mening_dos)          
+ml38<- glm(diagetiol2 ~ DOORMAT2,data=mening_dos)                   
+ml39<- glm(diagetiol2 ~ Virica,data=mening_dos)                     
+ml40<- glm(diagetiol2 ~ Cambio_Tto3,data=mening_dos)                
+ml41<- glm(diagetiol2 ~ T_dirigido3_combinado,data=mening_dos)      
+          
+ml43<- glm(diagetiol2 ~ DOORMAT3,data=mening_dos)                   
+ml44<- glm(diagetiol2 ~ Muerte_atribuible,data=mening_dos)          
+ml45<- glm(diagetiol2 ~ Cambio,data=mening_dos)                     
+ml46<- glm(diagetiol2 ~ tiempo,data=mening_dos)                     
+ml47<- glm(diagetiol2 ~ ulti2,data=mening_dos)  
+
+sm1<- summary(ml1)
+sm2<- summary(ml2)
+sm3<- summary(ml3)
+sm4<- summary(ml4)
+sm5<- summary(ml5)
+sm6<- summary(ml6)
+sm7<- summary(ml7)
+sm8<- summary(ml8)
+sm9<- summary(ml9)
+sm10<- summary(ml10)
+sm11<- summary(ml11)
+sm12<- summary(ml12)
+sm13<- summary(ml13)
+sm14<- summary(ml14)
+sm15<- summary(ml15)
+sm16<- summary(ml16)
+sm17<- summary(ml17)
+sm18<- summary(ml18)
+sm19<- summary(ml19)
+sm20<- summary(ml20)
+sm21<- summary(ml21)
+#sm22<- summary(ml22)
+sm23<- summary(ml23)
+sm24<- summary(ml24)
+sm25<- summary(ml25)
+sm26<- summary(ml26)
+sm27<- summary(ml27)
+sm28<- summary(ml28)
+sm29<- summary(ml29)
+sm30<- summary(ml30)
+sm31<- summary(ml31)
+sm32<- summary(ml32)
+sm33<- summary(ml33)
+sm34<- summary(ml34)
+sm35<- summary(ml35)
+sm36<- summary(ml36)
+sm37<- summary(ml37)
+sm38<- summary(ml38)
+sm39<- summary(ml39)
+sm40<- summary(ml40)
+sm41<- summary(ml41)
+
+sm43<- summary(ml43)
+sm44<- summary(ml44)
+sm45<- summary(ml45)
+sm46<- summary(ml46)
+sm47<- summary(ml47)
+
+
+dron<-matrix(c(sm1$coefficients[2],sm1$coefficients[8],
+sm2$coefficients[2],sm2$coefficients[8],
+sm3$coefficients[2],sm3$coefficients[8],
+sm4$coefficients[2],sm4$coefficients[8],
+sm5$coefficients[2],sm5$coefficients[8],
+sm6$coefficients[2],sm6$coefficients[8],
+sm2$coefficients[2],sm2$coefficients[8],
+sm8$coefficients[2],sm8$coefficients[8],
+sm9$coefficients[2],sm9$coefficients[8],
+sm10$coefficients[2],sm10$coefficients[8],
+sm11$coefficients[2],sm11$coefficients[8],
+sm12$coefficients[2],sm12$coefficients[8],
+sm13$coefficients[2],sm13$coefficients[8],
+sm14$coefficients[2],sm14$coefficients[8],
+sm15$coefficients[2],sm15$coefficients[8],
+sm16$coefficients[2],sm16$coefficients[8],
+sm12$coefficients[2],sm12$coefficients[8],
+sm18$coefficients[2],sm18$coefficients[8],
+sm19$coefficients[2],sm19$coefficients[8],
+sm20$coefficients[2],sm20$coefficients[8],
+sm21$coefficients[2],sm21$coefficients[8],
+#sm22$coefficients[2],sm22$coefficients[8],
+sm23$coefficients[2],sm23$coefficients[8],
+sm24$coefficients[2],sm24$coefficients[8],
+sm25$coefficients[2],sm25$coefficients[8],
+sm26$coefficients[2],sm26$coefficients[8],
+sm27$coefficients[2],sm27$coefficients[8],
+sm28$coefficients[2],sm28$coefficients[8],
+sm29$coefficients[2],sm29$coefficients[8],
+sm30$coefficients[2],sm30$coefficients[8],
+sm31$coefficients[2],sm31$coefficients[8],
+sm32$coefficients[2],sm32$coefficients[8],
+sm33$coefficients[2],sm33$coefficients[8],
+sm34$coefficients[2],sm34$coefficients[8],
+sm35$coefficients[2],sm35$coefficients[8],
+sm36$coefficients[2],sm36$coefficients[8],
+sm32$coefficients[2],sm32$coefficients[8],
+sm38$coefficients[2],sm38$coefficients[8],
+sm39$coefficients[2],sm39$coefficients[8],
+sm40$coefficients[2],sm40$coefficients[8],
+sm41$coefficients[2],sm41$coefficients[8],
+
+sm43$coefficients[2],sm43$coefficients[8],
+sm44$coefficients[2],sm44$coefficients[8],
+sm45$coefficients[2],sm45$coefficients[8],
+sm46$coefficients[2],sm46$coefficients[8],
+sm47$coefficients[2],sm47$coefficients[8]
+),ncol = 2,byrow = T)
+colnames(dron)<-c("Coeficiente","p_valor")
+rownames(dron)<-names(mening_dos)[c(2:46)]
+dron<-as.data.frame(dron)
+dron$p_valor<-as.numeric(dron$p_valor)
+
+dron$Variable = row.names(dron)
+row.names(dron) <- NULL
+dron = dron [ , c(3,1,2)]
+
+dron%>%
+kbl() %>%
+  kable_paper("striped", full_width = F)
+
+
+
+```     
+
+```{r , echo=FALSE, warning=FALSE,comment=F,results='asis'}
+data_select<-function(dfs,Yvar,Xvar=NULL){
+  dfs<-dfs[,c(Yvar,Xvar)]
+  Xvar2<-2:(length(Xvar)+1)
+  return(dfs)
+}
+  
+
+combinar<-function(df,Xvar=NULL,numXVar=1){
+  
+  comb_Var<-t(combn(Xvar,numXVar));combinaciones<-comb_Var
+  
+  colnames(combinaciones)<-NULL
+  
+  options(warn=-1)
+  
+  get_names<-function(df,x){
+    outcome<-matrix(data=NA,nrow=nrow(x),ncol=ncol(x))
+    for(i in 1:nrow(x)){
+      outcome[i,1:ncol(x)]<-colnames(df)[x[i,1:ncol(x)]]
+    }
+    return(outcome)
+  }
+  combn_names<-get_names(df,combinaciones)
+  return(combn_names)
+}
+
+
+Mconf<-function(df, x)
+{
+  filas<-nrow(ccc)
+  materr2<-matrix(nrow=filas,ncol=3)
+  colnames(materr2)<-c( "Variables", "Coeficiente","p_valor")
+  #rownames(materr2)<-paste("Modelo",c(1:filas))
+  for (i in 1:nrow(ccc)){
+    xnam <- as.matrix(ccc[i,])
+    fmla <- as.formula(paste(colnames(mening_dos[1]),"~", paste(xnam, collapse= "+")))
+    mod <- lm(fmla, data = mening_dos)
+    
+    mod2<- glm(fmla, data = mening_dos)
+    
+    df <- mod$data
+    prob = predict(mod,type = c("response"))
+    df$prob = prob
+    
+    fmla<-as.character(fmla)
+    coeficiente<-summary(mod)$coefficients[2]
+    pv<-summary(mod)$coefficients[8]
+    
+    #materr2[i,1]<-nrow(xnam)
+    materr2[i,1]<-fmla[3]
+    materr2[i,2]<-round(coeficiente,2)
+    materr2[i,3]<-round(pv,4)
+    
+  }
+  return(materr2)
+}
+
+ccc<-combinar(mening_dos,c(2:46),1)
+
+d<-Mconf(mening_dos,ccc)
+d<-as.data.frame(d)
+d$Coeficiente<-as.numeric(d$Coeficiente)
+d$p_valor<-as.numeric(d$p_valor)
+d%>%
+kbl() %>%
+  kable_paper("striped", full_width = F)
+```
+
+
+### Variables dicotómicas y numéricas con p valor < 0.05
+
+```{r , echo=FALSE, warning=FALSE,comment=F,results='asis'}
+#dron
+seleccion1<-dplyr::filter(d,p_valor<0.05)
+seleccion1%>%
+  kbl()%>%
+kable_paper("striped", full_width = F)
+```    
+
+### Variables categóricas con más de dos categorías
+
+
+```{r , echo=FALSE, warning=FALSE,comment=F}
+mening_n$Resultado_cultivo <-  factor(mening_n$Resultado_cultivo,
+                                    levels = c("Streptococcus pneumoniae", "Neisseria meningitidis","Negativo", "Haemophilus influenzae", "Klebsiella pneumoniae", "Listeria monocytogenes",
+                                                "Streptococcus equi","Streptococcus pyogenes"))
+
+mening_n$Año <-  factor(mening_n$Año,levels = c( "2021","2020","2019","2018","2017"))
+mening_n$Espectro_DOORMAT0 <-  factor(mening_n$Espectro_DOORMAT0,levels = c( "IV","III","I","0"))
+mening_n$Espectro_DOORMAT1<-  factor(mening_n$Espectro_DOORMAT1,levels = c( "IV","III","II","I"))
+mening_n$Espectro_DOORMAT2 <-  factor(mening_n$Espectro_DOORMAT2,levels = c( "IV","III","II","I"))
+mening_n$Espectro_DOORMAT3 <-  factor(mening_n$Espectro_DOORMAT3,levels = c( "III","II","I"))
+                                      
+ml20<- glm(diagetiol2 ~ Año,data=mening_n)              
+ml30<- glm(diagetiol2 ~ Espectro_DOORMAT0,data=mening_n)
+ml40<- glm(diagetiol2 ~ Espectro_DOORMAT1,data=mening_n)
+ml50<- glm(diagetiol2 ~ Espectro_DOORMAT2,data=mening_n)
+ml60<- glm(diagetiol2 ~ Espectro_DOORMAT3,data=mening_n)
+ml70<- glm(diagetiol2 ~ Resultado_cultivo,data=mening_n)
+```  
+
+```{r , echo=FALSE, warning=FALSE,comment=F}
+s1<-summary(ml20)
+t1<-as.data.frame(s1$coef)
+s2<-summary(ml30)
+t2<-as.data.frame(s2$coef)
+s3<-summary(ml40)
+t3<-as.data.frame(s3$coef)
+s4<-summary(ml50)
+t4<-as.data.frame(s4$coef)
+s5<-summary(ml60)
+t5<-as.data.frame(s5$coef)
+s6<-summary(ml70)
+t6<-as.data.frame(s6$coef)
+t1%>%
+  kbl(caption="Regresion bivariada para Año")%>%
+kable_styling(full_width = F)
+t2%>%
+  kbl(caption="Regresion bivariada para Espectro_DOORMAT0")%>%
+kable_styling(full_width = F)
+t3%>%
+  kbl(caption="Regresion bivariada para Espectro_DOORMAT1")%>%
+kable_styling(full_width = F)
+t4%>%
+  kbl(caption="Regresion bivariada para Espectro_DOORMAT2")%>%
+kable_styling(full_width = F)
+t5%>%
+  kbl(caption="Regresion bivariada para Espectro_DOORMAT3")%>%
+kable_styling(full_width = F)
+t6%>%
+  kbl(caption="Regresion bivariada para el resultado el cultivo")%>%
+kable_styling(full_width = F)
+```    
+
+## REGRESION MULTIVARIANTE  
+
+### Selección de variables y mejor modelo   
+
+
+
+
+
+
+
+
+
+
+

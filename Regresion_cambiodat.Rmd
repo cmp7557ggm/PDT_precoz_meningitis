@@ -1,0 +1,334 @@
+---
+title: "Regresiones  para cambiodat"
+author: "Carlos Martin Perez"
+date: "2022-12-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r , echo=FALSE, warning=FALSE,comment=F,include=FALSE}
+
+library(dplyr)
+library(knitr)
+library(gridExtra)
+library(openintro)
+library(formattable)
+library(MASS)
+library(ggplot2)
+library(readxl)
+library(pillar)
+library(kableExtra)
+library(lubridate)
+
+```    
+
+# Variable dependiente tiempo hasta el resultado final  
+
+### Regresiones simples con las variables numéricas y dicotómicas que alcanzan significación estadística  
+
+En un primer paso se ajustan regresiones lineales simples con TODAS las variables disponibles. De ellas, se seleccionan las que obtienen un valor de p menor de 0.05, que son las que se muestran en la siguiente tabla:  
+
+```{r , echo=FALSE, warning=FALSE,comment=F}
+
+mening <- read_xlsx("/Users/carlosmartinperez/Desktop/MENINGITIS/Meningitis pre-intervención.xlsx",sheet=2)
+
+mening$Resultado_cultivo <-  factor(mening$Resultado_cultivo,
+                                    levels = c("Streptococcus pneumoniae", "Neisseria meningitidis","Negativo", "Haemophilus influenzae", "Klebsiella pneumoniae", "Listeria monocytogenes","Streptococcus equi","Streptococcus pyogenes"))
+
+
+mening$Espectro_DOORMAT0 <-  factor(mening$Espectro_DOORMAT0,levels = c( "IV","III","I","0"))
+mening$Espectro_DOORMAT1<-  factor(mening$Espectro_DOORMAT1,levels = c( "IV","III","II","I"))
+mening$Espectro_DOORMAT2 <-  factor(mening$Espectro_DOORMAT2,levels = c( "IV","III","II","I"))
+mening$Espectro_DOORMAT3 <-  factor(mening$Espectro_DOORMAT3,levels = c( "III","II","I"))
+
+mening$tiempo<-as.duration(as.period(interval(mening$Fecha_h_meningitis , mening$Fecha_h_alta)))
+mening$tiempo<-ifelse(mening$tiempo<0,0,mening$tiempo)
+mening$tiempo<-round(mening$tiempo/3600,1)
+
+lcr<-as.duration(as.period(interval(mening$Fecha_h_meningitis , mening$Fecha_h_LCR)))
+lcr<-ifelse(lcr<0,0,lcr)
+lcr<-round(lcr/3600,1)
+mening$lcr<-lcr
+
+emp<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$Fecha_h_empirico)))
+emp<-ifelse(emp<0,0,emp)
+emp<-round(emp/3600,1)
+mening$emp<-emp  
+
+rapida<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$Fecha_h_rapida)))
+rapida<-ifelse(rapida<0,0,rapida)
+rapida<-round(rapida/3600,1)
+mening$rapida<-rapida
+
+recepcion<-as.duration(as.period(interval(mening$Fecha_h_meningitis , mening$Fecha_h_recepcion)))
+recepcion<-ifelse(recepcion<0,0,recepcion)
+recepcion<-round(recepcion/3600,1)
+mening$recepcion<-recepcion
+
+final<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$Fecha_h_resultado_final)))
+final<-ifelse(final<0,0,final)
+final<-round(final/3600,1)
+mening$final<-final
+
+cambiodat<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$Fecha_cambio)))
+cambiodat<-ifelse(cambiodat<0,0,cambiodat)
+cambiodat<-round(cambiodat/3600,1)
+mening$cambiodat<-cambiodat
+
+diagetiol<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$fecha_diag_etiol)))
+diagetiol<-ifelse(diagetiol<0,0,diagetiol)
+diagetiol<-round(diagetiol/3600,1)
+mening$diagetiol<-diagetiol
+
+diagetiol2<-as.duration(as.period(interval(mening$Fecha_h_rapida , mening$fecha_diag_etiol)))
+diagetiol2<-ifelse(diagetiol2<0,0,diagetiol2)
+diagetiol2<-round(diagetiol2/3600,1)
+mening$diagetiol2<-diagetiol2
+
+ulti2<-mening$Año
+ulti2<-ifelse(ulti2>2019,"Si","No")
+mening$ulti2<-ulti2
+
+mening$Año<-as.factor(mening$Año)
+mening$Año <-  factor(mening$Año,levels = c( "2021","2020","2019","2018","2017"))
+mening$ulti2<-as.factor(mening$ulti2)
+mening$Virica<-as.factor(mening$Virica) 
+
+##################################################
+#Eliminamos fechas y variables repetidas o no necesarias
+##################################################
+
+mening<-dplyr::select(mening,-c(Fecha_h_meningitis,Fecha_h_LCR,Fecha_h_empirico,Fecha_h_recepcion,
+                                Fecha_h_rapida, Fecha_h_resultado_final, Fecha_h_alta, Fecha_cambio, 
+                                fecha_diag_etiol,NHC , Procedencia, Desde_observación, 
+                                Desde_diag_LCR,Adquisición, TABP_tipo,Tipo_empirico , Desde_diag_empirico, 
+                                Desde_diag_recepcion, Celulas, Hematies, PMN, Mono, Glucosa, Proteína, 
+                                Tipo_prueba_rapida,Resultado_antigeno, Resultado_Gram, PCR, Tipo_dirigido1, 
+                                Tipo_dirigido2, Tipo_dirigido3,Desde_meningitis_dirigido1,
+                                Desde_diag_dirigido2,
+                                Desde_diag_final, Fecha_h_ingreso, 
+                                Fecha_h_dirigido1,Fecha_h_provi, Fecha_h_dirigido2, Fecha_h_dirigido3, 
+                                Fecha_altaUCI, 
+                                diagetiol,diagetiol2,lcr,emp,rapida,recepcion,final,T_dirigido3_mixto,
+                                Diagnostico_sindromico))
+
+mening = mening [ , c(58,1:57,59)]
+
+#base de datos sin variables con mas de dos categorias
+mening_dos<-dplyr::select(mening,-c(Año,Espectro_DOORMAT0,Espectro_DOORMAT1,Espectro_DOORMAT2,
+                                    Espectro_DOORMAT3, Resultado_cultivo,Agente_etiologico_detectado))
+# base de datos con variables de mas de dos categorías
+mening_n<-dplyr::select(mening,c(cambiodat,Año,Espectro_DOORMAT0,Espectro_DOORMAT1,Espectro_DOORMAT2,Espectro_DOORMAT3,Resultado_cultivo, Agente_etiologico_detectado))
+
+```  
+
+```{r , echo=FALSE, warning=FALSE,comment=F,results='asis'}
+data_select<-function(dfs,Yvar,Xvar=NULL){
+  dfs<-dfs[,c(Yvar,Xvar)]
+  Xvar2<-2:(length(Xvar)+1)
+  return(dfs)
+}
+  
+
+combinar<-function(df,Xvar=NULL,numXVar=1){
+  
+  comb_Var<-t(combn(Xvar,numXVar));combinaciones<-comb_Var
+  
+  colnames(combinaciones)<-NULL
+  
+  options(warn=-1)
+  
+  get_names<-function(df,x){
+    outcome<-matrix(data=NA,nrow=nrow(x),ncol=ncol(x))
+    for(i in 1:nrow(x)){
+      outcome[i,1:ncol(x)]<-colnames(df)[x[i,1:ncol(x)]]
+    }
+    return(outcome)
+  }
+  combn_names<-get_names(df,combinaciones)
+  return(combn_names)
+}
+
+
+Mconf<-function(df, x)
+{
+  filas<-nrow(ccc)
+  materr2<-matrix(nrow=filas,ncol=3)
+  colnames(materr2)<-c( "Variables", "Coeficiente","p_valor")
+  #rownames(materr2)<-paste("Modelo",c(1:filas))
+  for (i in 1:nrow(ccc)){
+    xnam <- as.matrix(ccc[i,])
+    fmla <- as.formula(paste(colnames(mening_dos[1]),"~", paste(xnam, collapse= "+")))
+    mod <- lm(fmla, data = mening_dos)
+    
+    mod2<- glm(fmla, data = mening_dos)
+    
+    df <- mod$data
+    prob = predict(mod,type = c("response"))
+    df$prob = prob
+    
+    fmla<-as.character(fmla)
+    coeficiente<-summary(mod)$coefficients[2]
+    pv<-summary(mod)$coefficients[8]
+    
+    #materr2[i,1]<-nrow(xnam)
+    materr2[i,1]<-fmla[3]
+    materr2[i,2]<-round(coeficiente,2)
+    materr2[i,3]<-round(pv,4)
+    
+  }
+  return(materr2)
+}
+
+ccc<-combinar(mening_dos,c(2:46),1)
+
+d<-Mconf(mening_dos,ccc)
+d<-as.data.frame(d)
+d$Coeficiente<-as.numeric(d$Coeficiente)
+d$p_valor<-as.numeric(d$p_valor)
+seleccion1<-dplyr::filter(d,p_valor<0.05)
+seleccion1%>%
+  kbl()%>%
+kable_paper("striped", full_width = F)
+```  
+
+Con las variables categóricas con más de dos categorias se ajustan tambien las correspondientes regresiones simples. Se muestra la regresión con la variable año, que es la unica significativa:  
+
+```{r , echo=FALSE, warning=FALSE,comment=F}
+mening_n$Resultado_cultivo <-  factor(mening_n$Resultado_cultivo,
+                                    levels = c("Streptococcus pneumoniae", "Neisseria meningitidis","Negativo", "Haemophilus influenzae", "Klebsiella pneumoniae", "Listeria monocytogenes",
+                                                "Streptococcus equi","Streptococcus pyogenes"))
+
+mening_n$Año <-  factor(mening_n$Año,levels = c( "2021","2020","2019","2018","2017"))
+mening_n$Espectro_DOORMAT0 <-  factor(mening_n$Espectro_DOORMAT0,levels = c( "IV","III","I","0"))
+mening_n$Espectro_DOORMAT1<-  factor(mening_n$Espectro_DOORMAT1,levels = c( "IV","III","II","I"))
+mening_n$Espectro_DOORMAT2 <-  factor(mening_n$Espectro_DOORMAT2,levels = c( "IV","III","II","I"))
+mening_n$Espectro_DOORMAT3 <-  factor(mening_n$Espectro_DOORMAT3,levels = c( "III","II","I"))
+                                      
+ml20<- glm(final ~ Año,data=mening_n)              
+
+```    
+
+```{r , echo=FALSE, warning=FALSE,comment=F}
+s1<-summary(ml20)
+t1<-as.data.frame(s1$coef)
+
+t1%>%
+  kbl(caption="Regresion bivariada para Año")%>%
+kable_styling(full_width = F)
+```    
+
+### Regresión lineal multivarainte  
+
+Ajustamos todos los modelos posibles mediante combinaciones con 2, 3, 4 y 5 variables. Se obtienen los r cuadrado, AIC y errores standard de los residuos y se tabulan los resultados.  
+
+En la siguiente tabla se muestran los cinco modelos con mejor bondad de ajuste:  
+
+```{r , echo=FALSE, warning=FALSE,comment=F}
+########################3
+bdred<-dplyr::select(mening,cambiodat,Año,Virica,Cancer, Diabetes,Systemic_glucocorticoid)
+
+########################
+data_select<-function(dfs,Yvar,Xvar=NULL){
+  dfs<-dfs[,c(Yvar,Xvar)]
+  Xvar2<-2:(length(Xvar)+1)
+  return(dfs)
+}
+  
+
+combinar<-function(df,Xvar=NULL,numXVar=1){
+  comb_Var<-t(combn(Xvar,numXVar));combinaciones<-comb_Var
+  colnames(combinaciones)<-NULL
+  options(warn=-1)
+  get_names<-function(df,x){
+    outcome<-matrix(data=NA,nrow=nrow(x),ncol=ncol(x))
+    for(i in 1:nrow(x)){
+      outcome[i,1:ncol(x)]<-colnames(df)[x[i,1:ncol(x)]]
+    }
+    return(outcome)
+  }
+  combn_names<-get_names(df,combinaciones)
+  return(combn_names)
+}
+
+
+Mconf<-function(df, x)
+{
+  filas<-nrow(ccc)
+  materr2<-matrix(nrow=filas,ncol=5)
+  colnames(materr2)<-c( "Nº var", "Variables", "R2","AIC","RSE")
+  rownames(materr2)<-paste("Modelo",c(1:filas))
+  for (i in 1:nrow(ccc)){
+    xnam <- as.matrix(ccc[i,])
+    fmla <- as.formula(paste(colnames(bdred[1]),"~", paste(xnam, collapse= "+")))
+    mod <- lm(fmla, data = bdred)
+    
+    mod2<- glm(fmla, data = bdred)
+    
+    df <- mod$data
+    prob = predict(mod,type = c("response"))
+    df$prob = prob
+    
+    fmla<-as.character(fmla)
+    r2<-summary(mod)$r.squared
+    aic<-summary(mod2)$aic
+    rse<-summary(mod)$sigma
+    materr2[i,1]<-nrow(xnam)
+    materr2[i,2]<-fmla[3]
+    materr2[i,3]<-round(r2,3)
+    materr2[i,4]<-round(aic,1)
+    materr2[i,5]<-round(rse,1)
+  }
+  return(materr2)
+}
+#####################################################
+#tabla<-data_select(bdred,1,c(2:6))
+
+ccc<-combinar(bdred,c(2:6),1)
+d<-Mconf(bdred,ccc)
+#d
+
+ccc<-combinar(bdred,c(2:6),2)
+dd<-Mconf(bdred,ccc)
+#dd
+
+ccc<-combinar(bdred,c(2:6),3)
+ddd<-Mconf(bdred,ccc)
+#ddd 
+
+ccc<-combinar(bdred,c(2:6),4)
+dddd<-Mconf(bdred,ccc)
+#dddd
+
+
+ccc<-combinar(bdred,c(2:6),5)
+ddddd<-Mconf(bdred,ccc)
+#ddddd
+
+final<-rbind(d,dd,ddd,dddd,ddddd)
+final<-as.data.frame(final)
+final<-arrange(final,RSE)
+finalr<-slice(final,1:5)
+finalr%>%
+kbl(caption="Los 5 mejores modelos de todos los posibles")%>%
+kable_styling(full_width = F)   
+```    
+
+
+Un modelo final factible puede ser:
+
+```{r , echo=FALSE, warning=FALSE,comment=F}
+MX3<-lm(cambiodat ~Año+Virica,data=mening)
+smx<-summary(MX3)
+t7<-as.data.frame(smx$coefficients)
+t7%>%
+  kbl(caption="Regresion multivariante con el mejor ajuste")%>%
+kable_styling(full_width = F)
+```  
+
+### Interpretación  
+
+El tiempo hasta el primer cambio de tratamiento se asocia con el año, de manera que tomando como referencia el año 2021, los tiempos son significativamente más largos en los años 2017 y 2018. Esto acontece independientemente de que la meningitis sea de origen bacteriano o vírico.  
