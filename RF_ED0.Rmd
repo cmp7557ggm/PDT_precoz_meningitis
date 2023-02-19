@@ -1,0 +1,438 @@
+---
+title: "Random forest supervivencia meningitis ED_0"
+author: "Carlos Martin Perez"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r , echo=FALSE, warning=FALSE,comment=F,include=FALSE}
+
+library(survival)
+library(knitr)
+library(dplyr)
+library(gridExtra)
+library(openintro)
+library(plotrix)
+library(formattable)
+library(KMsurv)
+library(MASS)
+library(ggplot2)
+library(plotly)
+library(survminer)
+library(ggsankey)
+library(circlize)
+library(readxl)
+library(pillar)
+library(kableExtra)
+library(survival)
+library(VSURF)
+library(KMsurv)
+library(randomForestSRC)
+library(lubridate)
+library(nlme)
+library(ggRandomForests)
+library(fastDummies)
+library(caret)
+library(parallel)
+```
+
+```{r, echo=FALSE,warning=FALSE}
+######################################################
+##TODO EL PREPROCESADO SE ENCUENTRA DESCRITO EN EL SCRIPT GUIA_BUENA.R##
+# El resultado del preprocesado se recoge en cuato bases de datos que se llaman
+# RF_ED0.RData, que incluye el espectro doormat 0 como una variable de calidad de los tratamientos
+#RF_door1, RF_door2 y RF_ED0 recogen solo doormat1 2 o 3 
+#RF_door_todos es una  base de datos con las tres puntuaciones DOORMAT y el espectro 0
+#####################################################
+
+load("/Users/carlosmartinperez/Desktop/MENINGITIS/RF/RF_ED0.RData")
+```   
+
+## Modelo random forest inicial  
+
+La salida en R es la siguiente: 
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+set.seed(123)
+mod1<-rfsrc(Surv(tiempo,Muerte_atribuible )~.,data=RF_ED0,ntree = 500, block.size = 1, nodesize = 1, mtry=18 ,importance = T,na.action = c( "na.impute"))
+mod1
+```    
+
+## Importancia de las variables  
+
+**Importancia por permutación**   
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE,results='asis'}
+imperm<-data.frame(mod1$importance)
+imperm<-arrange(imperm,desc(mod1.importance))
+imperm%>%
+  kbl()%>%
+  kable_styling(full_width = F)
+```   
+
+*Gráfico VIMP*
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE,}
+plot(gg_vimp(mod1))
+```   
+
+**Importancia por profundidad mínima**   
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+p.min<-var.select(mod1, conservative = "medium")
+gg_pmin<-gg_minimal_depth(p.min)
+print(gg_pmin)
+#plot (gg_pmin)
+#gg_pmin%>%
+  #kbl()%>%
+  #kable_styling(full_width = F)
+```   
+
+*Gráfico Profundidad mínima*
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE,}
+plot (gg_pmin)
+```   
+
+**Comparacion de métodos VIMP  y Profundidad mínima**  
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE,}
+plot (gg_minimal_vimp (gg_pmin))+ 
+  theme (legend.position = c (0.8, 0.2)) 
+```   
+
+### Modelo con 13 variables  
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+set.seed(123)
+mod2<-rfsrc(Surv(tiempo,Muerte_atribuible )~ED_0+Cambio+ Glasgow+ Charlson_Index+
+              cambiodat+final+PCR2+UCI+diagetiol2+ulti2+recepcion+Virica+final, 
+            data=RF_ED0,ntree = 500, block.size = 1,nodesize = 1,mtry=8,importance = T,na.action = c( "na.impute"))
+mod2
+```    
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+plot.variable(mod2, partial=T,plots.per.page = 2, xvar.names = c("ED_0","Cambio", "Glasgow", "Charlson_Index","cambiodat","final","PCR2","UCI","diagetiol2","ulti2",
+"recepcion","Virica","final"),notch=FALSE,surv.type = "surv",ylab="Supervivencia")
+              
+```     
+
+A continuación se muestran los 10 modelos con menor error de predicción entre todos los posibles con las variables seleccionadas.   
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+#________________________Selección de las variables más importantes
+b_datos<-dplyr::select(RF_ED0,tiempo,Muerte_atribuible,ED_0,Cambio, Glasgow, Charlson_Index,cambiodat,final,PCR2,UCI,diagetiol2,ulti2,recepcion,Virica,final)
+#_________________________
+
+########################################
+#Algoritmos para obtener todos los modelos posibles con su correspondiente error OOB
+# y así seleccionar el modelo que menos error de predicción cometa
+
+#_____funcion primera
+data_select<-function(df,Yvar,Xvar=NULL){
+  df<-df[,c(Yvar,Xvar)]
+  Xvar2<-2:(length(Xvar)+1)
+  return(df)
+}
+
+#_____funcion segunda (combinaciones tomandas de n en n)
+combinar<-function(df,Xvar=NULL,numXVar=1){
+  
+  comb_Var<-t(combn(Xvar,numXVar));combinaciones<-comb_Var
+  
+  colnames(combinaciones)<-NULL
+  
+  options(warn=-1)
+  
+  get_names<-function(df,x){
+    outcome<-matrix(data=NA,nrow=nrow(x),ncol=ncol(x))
+    for(i in 1:nrow(x)){
+      outcome[i,1:ncol(x)]<-colnames(df)[x[i,1:ncol(x)]]
+    }
+    return(outcome)
+  }
+  combn_names<-get_names(df,combinaciones)
+  return(combn_names)
+}
+
+#_____funcion tercera (obtención de los modelos y su error)
+Mconf<-function(df, x)
+{
+  filas<-nrow(ccc)
+  materr2<-matrix(nrow=filas,ncol=2)
+  colnames(materr2)<-c( "Variables", "Error")
+  rownames(materr2)<-paste("Modelo",c(1:filas))
+  for (i in 1:nrow(ccc)){
+    xnam <- as.matrix(ccc[i,])
+    fmla <- as.formula(paste("Surv(",colnames(b_datos[1]),",",colnames(b_datos[2]),") ~", paste(xnam, collapse= "+")))
+    
+    mod <- rfsrc(fmla, data = b_datos,ntree = 500)
+    df <- mod$data
+    prob = predict(mod,type = c("response"))
+    df$prob = prob
+    
+    fmla<-as.character(fmla)
+    #coeficiente<-summary(mod)$coefficients[2]
+    #pv<-summary(mod)$coefficients[8]
+    
+    #materr2[i,1]<-nrow(xnam)
+    materr2[i,1]<-fmla[3]
+    materr2[i,2]<-get.cindex(mod$yvar[,1], mod$yvar[,2], mod$predicted.oob)
+    #materr2[i,3]<-round(pv,4)
+    
+  }
+  return(materr2)
+}
+
+set.seed(123)
+ccc<-combinar(b_datos,c(3:12),1)
+d1<-Mconf(b_datos,ccc)
+
+ccc<-combinar(b_datos,c(3:12),2)
+d2<-Mconf(b_datos,ccc)
+
+ccc<-combinar(b_datos,c(3:12),3)
+d3<-Mconf(b_datos,ccc)
+
+ccc<-combinar(b_datos,c(3:12),4)
+d4<-Mconf(b_datos,ccc)
+
+ccc<-combinar(b_datos,c(3:12),5)
+d5<-Mconf(b_datos,ccc)
+
+ccc<-combinar(b_datos,c(3:12),6)
+d6<-Mconf(b_datos,ccc)
+
+ccc<-combinar(b_datos,c(3:12),7)
+d7<-Mconf(b_datos,ccc)
+
+ccc<-combinar(b_datos,c(3:12),8)
+d8<-Mconf(b_datos,ccc)
+
+dfinal<-rbind(d1,d2,d3,d4,d5,d6,d7,d8)
+dfinal<-as.data.frame(dfinal)
+dfinal<-arrange(dfinal,Error)
+dfinalr<-slice(dfinal,1:10)
+dfinalr%>%
+  kbl(caption=" Todos los modelos posibles")%>%
+  kable_styling(full_width = F) 
+```    
+
+## Modelo propuesto  
+
+Incluye las variables ED_0, Cambio, Glasgow, PCR2, diagetiol2, ulti2, Charlson_Index
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+mf1<-rfsrc(Surv(tiempo,Muerte_atribuible )~ED_0 + Cambio + Glasgow + PCR2+ diagetiol2+
+           ulti2+Charlson_Index,data=RF_ED0,ntree = 1000,nodesize = 3)
+mf1
+```    
+
+### **Gráficos de efectos parciales**   
+
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+library(parallel)
+gg_v <- gg_variable(mf1, time = c(7, 14,30),
+                    time.labels = c("7 dias", "14 dias","30 dias"))
+xvar <- c("Glasgow","diagetiol2","ED_0")
+xvar.cat <- c("Cambio","PCR2")
+
+xvar <- c(xvar, xvar.cat)
+
+partial_pbc <- mclapply(c(7,14,30), function(tm){
+  plot.variable(mf1, surv.type = "surv", time = tm, xvar.names = xvar,
+                partial = TRUE, show.plots = FALSE)})  
+
+gg_dta <- mclapply(partial_pbc, gg_partial)
+
+pbc_ggpart <- combine.gg_partial(gg_dta[[1]], gg_dta[[2]], gg_dta[[3]],
+                                 lbls = c("7 dias","14 dias","30 dias"))
+ggpart <- pbc_ggpart 
+
+```
+
+
+#### Variable Cambio
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+plot.variable(mf1, partial=T,plots.per.page = 1, xvar.names = c("Cambio"),
+              notch=FALSE,surv.type = "surv",time = 12,
+              main=" Cambio de tratamiento supervivencia 12 días",
+              xlab = "Cambio, 1=No ; 2=Sí") 
+##################################################################################
+plot(gg_rfsrc(mf1,by="Cambio"),show.legend = F)+
+  labs(x="Tiempo en días")+
+  coord_cartesian(xlim = c(0,30))+
+  geom_vline(aes(xintercept=9),col="gray")+
+  scale_color_discrete("Cambio", labels = c("No cambio", "Cambio"))+
+  labs(title = "Curvas supervivencia a 30 días. Variable Cambio")+
+  labs(subtitle = "En verde cambio de tratamiento, en rojo no cambio")+
+  labs(caption = "Linea vertical: 9 días\n(Mediana del tiempo de seguimiento)")
+```     
+
+*Gráfico de supervivencia en distintos tiempos de evolución*  
+
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+ggplot(pbc_ggpart[["Cambio"]], aes(y=yhat, x=Cambio, col=group))+
+  geom_boxplot(notch = FALSE,
+               outlier.shape = NA) + # panel=TRUE,
+  labs(x = "Cambio", y = "Survival (%)", color="Time", shape="Time") +
+  theme(legend.position = c(0.8, 0.2)) +
+  labs(title='Supervivencia según variable Cambio', 
+       subtitle='A los 7 y a los 30 días')
+```
+
+
+#### Variable PCR2 
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+plot.variable(mf1, partial=T,plots.per.page = 1, xvar.names = c("PCR2"),
+              notch=F,surv.type = "surv",time = 12,
+              main=" PCR y supervivencia a 12 días",
+              xlab = "PCR, 1=No ; 2=Sí") 
+
+plot(gg_rfsrc(mf1,by="PCR2"),show.legend = F)+
+  labs(x="Tiempo en días")+
+  coord_cartesian(xlim = c(0,30))+
+  geom_vline(aes(xintercept=12),col="gray")+
+  #geom_vline(aes(xintercept=480),col="gray")+
+
+  scale_color_discrete("PCR", labels = c("No PCR", "PCR"))+
+  labs(title = "Curvas supervivencia a 30 días. Variable PCR")+
+  labs(subtitle = "En verde PCR, en rojo no PCR")+
+  labs(caption = "Linea vertical: 12 días")
+```    
+
+*Gráfico de supervivencia en distintos tiempos de evolución*  
+
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+ggplot(pbc_ggpart[["PCR2"]], aes(y=yhat, x=PCR2, col=group))+
+geom_boxplot(notch = FALSE,
+                 outlier.shape = NA) + # panel=TRUE,
+  labs(x = "PCR", y = "Survival (%)", color="Time", shape="Time") +
+  theme(legend.position = c(0.15, 0.2)) +
+  labs(title='Supervivencia según PCR', 
+       subtitle='A los 7 y a los 30 días')
+```
+
+#### Variable ED_0
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+plot.variable(mf1, partial=T,plots.per.page = 1, xvar.names = c("ED_0"),
+              notch=FALSE,surv.type = "surv",time = 12,
+              main="ED_0 y supervivencia a 12 días",
+              xlab = "Puntuación DOORMAT")  
+
+plot(gg_rfsrc(mf1,by="ED_0"),show.legend = F)+
+  labs(x="Tiempo en días")+
+  coord_cartesian(xlim = c(0,30))+
+  geom_vline(aes(xintercept=9),col="gray")+
+  scale_color_discrete("ED_0")+ #, labels = c("No PCR", "PCR"))+
+  labs(title = "Curvas supervivencia a 30 días. Variable ED_0")+
+  #labs(subtitle = "En verde PCR realizada, en rojo no PCR")+
+  labs(caption = "Linea vertical: 12 días")
+```      
+
+*Gráfico de supervivencia en distintos tiempos de evolución*  
+
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+ggplot(pbc_ggpart[["ED_0"]], aes(y=yhat, x=ED_0, col=group))+
+geom_boxplot(notch = FALSE,
+                 outlier.shape = NA) + # panel=TRUE,
+  labs(x = "Puntuación DOORMAT", y = "Survival (%)", color="Time", shape="Time") +
+  theme(legend.position = c(0.1, 0.2)) +
+  labs(title='Supervivencia según  ED_0', 
+       subtitle='A los 7 y a los 30 días')
+```
+
+#### Variable puntuación Glasgow
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+plot.variable(mf1, partial=T,plots.per.page = 1, xvar.names = c("Glasgow"),
+              notch=FALSE,surv.type = "surv",time=12,
+              main="Glasgow y supervivencia 12 días")
+```  
+
+*Gráfico de supervivencia en distintos tiempos de evolución*  
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+
+ggpart$Cambio <- NULL
+ggpart$PCR2 <- NULL
+ggpart$ED_0 <- NULL
+ggpart$diagetiol2 <- NULL
+
+
+plot(ggpart, panel = TRUE,size=3) + 
+  labs(x = "", y = "Survival", color = "Time", shape = "Time") +
+  theme(legend.position = c(0.1, 0.2))+
+  labs(title='Supervivencia según Glasgow', 
+       subtitle='A los 10 y a los 30 días')
+```   
+
+#### Variable diagetiol2 
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+plot.variable(mf1, partial=T,plots.per.page = 1, xvar.names = c("diagetiol2"),
+              notch=FALSE,surv.type = "surv",time=12,
+              main="diagetiol2 y supervivencia 12 días")
+```    
+
+*Gráfico de supervivencia en distintos tiempos de evolución*  
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+
+gg_v <- gg_variable(mf1, time = c(7, 14,30),
+                    time.labels = c("7 dias", "14 dias","30 dias"))
+xvar <- c("Glasgow","diagetiol2","DOORMAT1")
+xvar.cat <- c("Cambio","PCR2")
+
+xvar <- c(xvar, xvar.cat)
+
+partial_pbc <- mclapply(c(7,14,30), function(tm){
+  plot.variable(mf1, surv.type = "surv", time = tm, xvar.names = xvar,
+                partial = TRUE, show.plots = FALSE)})  
+
+gg_dta <- mclapply(partial_pbc, gg_partial)
+
+pbc_ggpart <- combine.gg_partial(gg_dta[[1]], gg_dta[[2]], gg_dta[[3]],
+                                 lbls = c("7 dias","14 dias","30 dias"))
+ggpart <- pbc_ggpart 
+
+
+ggpart$Cambio <- NULL
+ggpart$PCR2 <- NULL
+ggpart$DOORMAT1 <- NULL
+ggpart$Glasgow <- NULL
+
+
+plot(ggpart, panel = TRUE,size=3) + 
+  labs(x = "", y = "Survival", color = "Time", shape = "Time") +
+  theme(legend.position = c(0.9, 0.9))+
+  labs(title='Supervivencia según diagetiol2', 
+       subtitle='A los 10 y a los 30 días')
+```   
+
+#### Variable Indice de Charlson   
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+plot.variable(mf1, partial=T,plots.per.page = 1, xvar.names = c("Charlson_Index"),
+              notch=FALSE,surv.type = "surv",time=30,
+              main="Charlson y supervivencia 30 días")
+```     
+
+#### Variable ulti2  
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+plot.variable(mf1, partial=T,plots.per.page = 1, xvar.names = c("ulti2"),
+              notch=FALSE,surv.type = "surv",time=30,
+              main="ulti2 y supervivencia 30 días")
+```     

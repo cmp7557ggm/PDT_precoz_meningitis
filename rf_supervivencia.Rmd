@@ -1,0 +1,756 @@
+---
+title: "Random forest de supervivencia en meningitis"
+author: "Carlos Martin Perez"
+date: "2022-12-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r , echo=FALSE, warning=FALSE,comment=F,include=FALSE}
+
+library(survival)
+library(knitr)
+library(dplyr)
+library(gridExtra)
+library(openintro)
+library(plotrix)
+library(formattable)
+library(KMsurv)
+library(MASS)
+library(ggplot2)
+library(plotly)
+library(survminer)
+library(ggsankey)
+library(circlize)
+library(readxl)
+library(pillar)
+library(kableExtra)
+library(survival)
+library(VSURF)
+library(KMsurv)
+library(randomForestSRC)
+library(lubridate)
+library(nlme)
+library(ggRandomForests)
+library(fastDummies)
+library(caret)
+library(parallel)
+```
+
+```{r, echo=FALSE,warning=FALSE}
+load("/Users/carlosmartinperez/Desktop/MENINGITIS/RF/df.RData")
+#glimpse(datarf_nzv)
+```    
+
+## Introducción
+
+El análisis clásico de supervivencia (regresión de Cox) nos muestra que hay, al menos, dos variables que se asocian con el tiempo hasta la muerte por meningitis. Existen otras variables que, probablemente debido al pequeño numero de casos del que disponemos, no ajustan bien en los modelos, aunque los datos parecen indicar asociación.
+
+El análisis con random forest, cuyo objetivo principal es predecir la variable de resultado (en nuestro caso la muerte por meningitis) en función de un conjunto de variables, nos puede ayudar a determinar que variables de las incluidas en la base de datos son las más importantes para explicar la mortalidad por meningitis, y con ellas se pueden ajustar bosques aleatorios que nos expliquen la asociación de las variables con esa mortalidad, y ello comentiendo el menor error de predicción posible.
+
+## Procedimiento
+
+### Preprocesado
+
+Para ajustar un bosque aleatorio es necesario depurar previamente la base de datos para identificar variables muy correlacionadas entre si o que presenten varianzas proximas a cero. También hemos binarizado la variable resultado del cultivo, que originalmente tiene 11 categorías.
+
+Entonces, se han seguido los siguientes pasos partiendo de la base de datos original:
+
+1- Creación de variables de tiempo y eliminación de las que contienen fechas. 
+
+2- Quitar las variables con datos faltantes (DOORMAT, tratamientos dirigidos 2 y 3). Unicamente se imputa un dato faltante de la variable diageto (tiempo desde la prueba rápida al diagnóstico etiológico). 
+
+3- Se binariza la variable resultado de cultivo (11 gategorías).La binarización consiste en crear nuevas variables dummy con cada uno de los niveles de la variable. A este proceso también se le conoce como one hot encoding. En este caso, binarizando, podremos localizar categorías poco frecuentes con varianza proxima a cero, que podrían generar problemas en el modelo.
+
+4- Se eliminan las variables con varianza cero o proxima a cero. No se deben incluir en el modelo predictores que contengan un único valor (cero-varianza) ya que no aportan información. Tampoco es conveniente incluir predictores que tengan una varianza próxima a cero, es decir, predictores que toman solo unos pocos valores, de los cuales, algunos aparecen con muy poca frecuencia. El problema con estos últimos es que pueden convertirse en predictores con varianza cero cuando se dividen las observaciones por validación cruzada o bootstrap.
+
+5- Se estudian las correlaciones entre variables numéricas y se seleccionan las que quedarán en la base de datos. Cuando las varables están correlacionadas, la medida de importancia  puede estar sesgada por datos de instancias no realistas ya que la a permutación de las variables correlacionadas genera situaciones poco probables . Ejemplo: cuando dos atributos están correlacionados positiviamente (como la altura y el peso de una persona), al permutar uno de los atributos se crean instancias poco probables o incluso físicamente imposibles (persona de 2m con peso de 30Kg.). No obstante estas nuevas instancias se usan para el cálculo de la importancia. Podría penalizar a mi modelo por observaciones generadas que nunca ocurrirán en la realidad.   
+
+El resultado es un data frame sin datos faltantes, que incluye 23 variables correspondientes a 53 individuos.
+
+```{r, echo=FALSE,warning=FALSE}
+######################################################
+##TODO EL PREPROCESADO SE ENCUENTRA DESCRITO EN EL SCRIPT GUIA_BUENA.R##
+# El resultado del preprocesado se recoge en cuato bases de datos que se llaman
+# RF_ED0.RData, que incluye el espectro doormat 0 como una variable de calidad de los tratamientos
+#RF_door1, Rf_door2 y Rf_door recogen solo doormat1 2 o 3 
+#RF_door_todos es una  base de datos con las tres puntuaciones DOORMAT y el espectro 0
+#####################################################
+
+mening <- read_xlsx("/Users/carlosmartinperez/Desktop/MENINGITIS/df.xlsx",
+                     col_types = c("numeric","numeric",                                    "text","text","text","text","text","text","text","text","text","text","text","text","text","text",                                     "date","date","date","date","date","date","date","date","date","numeric"))
+
+
+########################################################
+## Creacion de variables de tiempo a partir de las fechas
+mening$tiempo<-as.duration(as.period(interval(mening$Fecha_h_meningitis , mening$Fecha_h_alta)))
+mening$tiempo<-ifelse(mening$tiempo<0,0,mening$tiempo)
+mening$tiempo<-round(mening$tiempo/3600,1)
+
+lcr<-as.duration(as.period(interval(mening$Fecha_h_meningitis , mening$Fecha_h_LCR)))
+lcr<-ifelse(lcr<0,0,lcr)
+lcr<-round(lcr/3600,1)
+mening$lcr<-lcr
+
+emp<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$Fecha_h_empirico)))
+emp<-ifelse(emp<0,0,emp)
+emp<-round(emp/3600,1)
+mening$emp<-emp  
+
+rapida<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$Fecha_h_rapida)))
+rapida<-ifelse(rapida<0,0,rapida)
+rapida<-round(rapida/3600,1)
+mening$rapida<-rapida
+
+recepcion<-as.duration(as.period(interval(mening$Fecha_h_meningitis , mening$Fecha_h_recepcion)))
+recepcion<-ifelse(recepcion<0,0,recepcion)
+recepcion<-round(recepcion/3600,1)
+mening$recepcion<-recepcion
+
+final<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$Fecha_h_resultado_final)))
+final<-ifelse(final<0,0,final)
+final<-round(final/3600,1)
+mening$final<-final
+
+cambiodat<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$Fecha_cambio)))
+cambiodat<-ifelse(cambiodat<0,0,cambiodat)
+cambiodat<-round(cambiodat/3600,1)
+mening$cambiodat<-cambiodat
+
+diagetiol<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$fecha_diag_etiol)))
+diagetiol<-ifelse(diagetiol<0,0,diagetiol)
+diagetiol<-round(diagetiol/3600,1)
+mening$diagetiol<-diagetiol
+
+diagetiol2<-as.duration(as.period(interval(mening$Fecha_h_rapida , mening$fecha_diag_etiol)))
+diagetiol2<-ifelse(diagetiol2<0,0,diagetiol2)
+diagetiol2<-round(diagetiol2/3600,1)
+mening$diagetiol2<-diagetiol2
+
+ulti2<-mening$Año
+ulti2<-ifelse(ulti2>2019,"Si","No")
+mening$ulti2<-ulti2
+
+mening$Año<-as.factor(mening$Año)
+mening$ulti2<-as.factor(mening$ulti2)
+mening$Virica<-as.factor(mening$Virica) 
+
+##################################################
+#Eliminamos fechas y variables repetidas o no necesarias
+##################################################
+
+mening<-dplyr::select(mening,-c(Fecha_h_meningitis,Fecha_h_LCR,
+                                Fecha_h_empirico,Fecha_h_recepcion,Fecha_h_rapida,Fecha_h_resultado_final,
+                                Fecha_h_alta,Fecha_cambio,fecha_diag_etiol))
+
+
+##################################################
+#Dicotomizamos los resultados del cultivo
+##################################################
+
+datarf_dum<-dummy_cols(mening,  select_columns = c( "Resultado_cultivo"),remove_selected_columns = TRUE)
+  
+#______ Eloiminamos varianzas proximas a cero
+datarf_nzv<-dplyr::select(datarf_dum,-c(5,27,28,33,34))
+
+datarf_nzv<-rename(datarf_nzv, Listeria_M = `Resultado_cultivo_Listeria_M`, Negativo = Resultado_cultivo_Negativo, 
+                   Neisseria_M = `Resultado_cultivo_Neisseria_m` , Neumococo = `Resultado_cultivo_Neumococo`)
+
+##################################################
+#la base de datos pasa a llamarse df
+##################################################
+
+df<-datarf_nzv
+
+##################################################
+#Pasamos variables caracter a factores
+##################################################
+df$Sexo<-as.factor(df$Sexo)
+df$T_empirico<-as.factor(df$T_empirico)
+df$T_em_combinado<-as.factor(df$T_em_combinado)
+df$T_em_mixto<-as.factor(df$T_em_mixto)
+df$Actividad0<-as.factor(df$Actividad0)
+#df$Tipo_prueba_rapida <-as.factor(df$Tipo_prueba_rapida )
+df$PCR2 <-as.factor(df$PCR2 )
+df$dirigido1_combinado<-as.factor(df$dirigido1_combinado)
+df$dirigido1_mixto<-as.factor(df$dirigido1_mixto)
+df$Provisional<-as.factor(df$Provisional)
+df$Cambio <-as.factor(df$Cambio )  
+
+##################################################
+#Estudiamos correlación entre variables continuas que recogen tiempos y elimnamos las correlacionadas
+#Se eliminan tambien ulti2 (relacionada con año) y cultivo negativo (idéntica a Virica)
+##################################################
+df<-dplyr::select(df,-c(recepcion,rapida,final,cambiodat,ulti2,Negativo))
+
+##################################################
+#Cambiamos factores a numericos para que funcione random forest ???
+##################################################
+
+df$Sexo<-as.integer(df$Sexo)
+df$T_empirico<-as.integer(df$T_empirico)
+df$T_em_combinado<-as.integer(df$T_em_combinado)
+df$T_em_mixto<-as.integer(df$T_em_mixto)
+df$Actividad0<-as.integer(df$Actividad0)
+#df$Tipo_prueba_rapida <-as.integer(df$Tipo_prueba_rapida )
+df$PCR2 <-as.integer(df$PCR2 )
+df$dirigido1_combinado<-as.integer(df$dirigido1_combinado)
+df$dirigido1_mixto<-as.integer(df$dirigido1_mixto)
+df$Provisional<-as.integer(df$Provisional)
+df$Cambio <-as.integer(df$Cambio )
+df$Virica <-as.integer(df$Virica )
+df$Año <-as.integer(df$Año )
+#df$ulti <-as.integer(df$ulti )
+#df$ulti2 <-as.integer(df$ulti2 )
+
+
+##detectamos valores faltantes__________
+#sum(is.na(df))
+#apply(X = is.na(df), MARGIN = 2, FUN = sum)
+# Se elima emp que tiene 5 faltantes
+df<-dplyr::select(df,-c(emp))
+
+```     
+
+### Modelo inicial,  seleccion de variables y modelos finales  
+
+Con la base de datos depurada se construye un bosque aleatorio que incluye TODAS las variables disponibles. Posteriormente se determina la imortancia de las variables mediante dos métodos:  
+
+**Importancia por permutación**   
+
+La importancia por permutación (VIMP) se basa en el error OOB de predicción que comete cada variable en concreto. Así, se determina el error del modelo con la variable y sin ella (por permutación aleatoria). La cantidad en la que el  nuevo error excede el error OOB original del árbol es igual a la importancia del árbol para esa variable. Un VIMP positivo grande indica una alta capacidad de predicción, mientras que los valores cero o negativos identifican variables de ruido.   
+
+**Importancia por profundidad mínima**  
+
+La profundidad mínima supone que las variables con alto impacto en la predicción son aquellas que con mayor frecuencia dividen los nodos más cercanos al nodo raíz, donde dividen las muestras más grandes de la población. La suposición en la métrica es que los valores de profundidad mínima más pequeños indican que la variable separa grandes grupos de observaciones y, por lo tanto, tiene un gran impacto en la predicción del bosque.  
+
+Dado que las medidas VIMP y de profundidad mínima utilizan criterios diferentes, es esperable que la clasificación de las variables sea algo diferente. Por ello procedemos a comparar las clasificaciones entre profundidad mínima y VIMP.  
+
+Con las medidas de importancia procedemos a seleccionar las variables con mas impacto en la prediccionn del modelo y generamos con ellas uno nuevo.  Por tanto,hemos utilizado profundidad mínima y VIMP para reducir el número de variables a un subconjunto bastante más manejable.  
+
+En un ultimo paso, partiendo del conjunto de variables del paso anterior, hemos creado mediante combinaciones todos los modelos posibles, para terminar seleccionando y mostrando aquellos que comenten el menor error de predicción posible.  
+
+### Representación gráfica  
+
+Una vez determinado qué variables contribuyen más a la precisión predictiva del bosque, exploraremos cómo se asocia la respuesta a estas variables. Para examinar la dependencia de la respuesta pronosticada del bosque con las covariables utilizaremos métodos gráficos. Concretamente utilizaremos los gráficos de dependencia parcial que se generan controlando el efecto de la variable de interés por el resto de variables del modelo. Las figuras se construyen seleccionando puntos espaciados uniformemente a lo largo de la distribución de la variable de interés (25 puntos por defecto). Para cada uno de estos puntos se calcula la predicción promedio de RF estando presentes todas las covariables restantes en el modelo.
+
+
+## Modelo random forest inicial  
+
+La salida en R es la siguiente: 
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+set.seed(123)
+mod1<-rfsrc(Surv(tiempo,Muerte_atribuible )~.,data=df,ntree = 500, block.size = 1,nodesize = 4,importance = T,na.action = c( "na.impute"))
+mod1
+```  
+
+**Interpretación del modelo**  
+
+La información que nos da esta salida es la siguiente: 
+
+Tenemos una muestra de **53 individuos** de los que **han fallecido 12**. 
+Se han **imputado** datos (concretamente un valor faltante de la variable diagetiol2)
+La base de datos contiene **20 variables** (línea 8)
+Las líneas 4 y 5 muestran el **número de árboles** y el **tamaño del nodo terminal**, que se especifican mediante el argumento de entrada ntree y nodesize.
+La línea 6 muestra el **número de nodos terminales** por árbol promediados en el bosque y la línea 7 refleja el argumento de entrada mtry, que es el número de **variables seleccionadas aleatoriamente** como candidatas para dividir un nodo.
+la línea 9 muestra el tipo de **bootstrap**, donde swor se refiere al muestreo sin reemplazo y swr se refiere al muestreo con reemplazo. 
+La línea 10 muestra el **tamaño de la muestra para swor**, el número equivale a aproximadamente 43.4% de observaciones. 
+Las líneas 11 y 12 muestran el **tipo de bosque** donde RSF y surv se refieren a la familia "survival". 
+la línea 13 muestra la **regla de división** (argumento splitrule) y la línea 14 muestra el **número de divisiones aleatorias** a considerar para cada variable candidata (que coincide con el (argumento nsplit).
+
+Las dos lineas siguientes nos dan una información transcendental: el error de predicción del modelo.  
+**La puntuación de probabilidad de rango continuo (CRPS)** se muestra en la línea 14, y se define como la puntuación Brier integrada dividida por el tiempo. Este valor es mejor cuanto mas pequeño sea.  
+**La tasa de error** se muestra en la línea 15 y representa a 1- C-index.
+C-index es una extensión del AUC que se  usa comúnmente para evaluar modelos de riesgo en el análisis de supervivencia, donde los datos pueden estar censurados. Los valores de c cercanos a 0,5 indican que las predicciones de la puntuación de riesgo no son mejores que tirar una moneda al aire para determinar qué paciente vivirá más tiempo. Los valores cercanos a 1 indican que las puntuaciones de riesgo son buenas para determinar la supervivencia. Los valores cercanos a 0 significan que las puntuaciones de riesgo son peores que tirar una moneda al aire.  
+
+La tasa de error del modelo inicial es superior a 43, lo que supone un error de predicción alto.  
+
+## Importancia de las variables  
+
+**Importancia por permutación**   
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE,results='asis'}
+imperm<-data.frame(mod1$importance)
+imperm<-arrange(imperm,desc(mod1.importance))
+imperm%>%
+  kbl()%>%
+  kable_styling(full_width = F)
+
+
+```   
+
+*Gráfico VIMP*
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE,}
+plot(gg_vimp(mod1))
+```  
+
+Las variables que tienen una puntuacion positiva son 8 en total. La mas importante es la que recoge si se ha producido algun cambio en el tratamiento empírico tras los sucesivos informes de microbiología.  
+Otras 11 variables tienen puntuaciones negativas por lo que, probablemente solo aportan ruido al modelo.  
+
+**Importancia por profundidad mínima**   
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+p.min<-var.select(mod1, conservative = "medium")
+gg_pmin<-gg_minimal_depth(p.min)
+print(gg_pmin)
+#plot (gg_pmin)
+#gg_pmin%>%
+  #kbl()%>%
+  #kable_styling(full_width = F)
+```   
+
+*Gráfico Profundidad mínima*
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE,}
+plot (gg_pmin)
+```    
+
+Para un punto de corte de 3.73 (actitud conservadora media) este método selecciona 8 variables. La más importante es la edad, seguida de la variable cambio de tratamiento.  
+
+**Comparacion de métodos VIMP  y Profundidad mínima**  
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE,}
+plot (gg_minimal_vimp (gg_pmin))+ 
+  theme (legend.position = c (0.8, 0.2)) 
+```     
+
+Hay tres variables identificadas como importantes por los dos métodos :Cambio, edad y Charlson_Index.  
+Tres variables más puntúan alto en VIMP (Dirigido1_combinado, PCR2 y Actividad0).  
+De las 5 variables restantes con profundidad minima por debajo del punto de corte, las más interesantes parecen el año y el tiempo transcurrido desde la prueba rápida a la identificación del microorganismo causante.  
+
+No obstante, construimos un modelo con todas las variables consideradas importantes por cualquiera de los dos métodos y presentamos los gráficos de efectos parciales para cada una de las variables:   
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+set.seed(123)
+mod2<-rfsrc(Surv(tiempo,Muerte_atribuible )~Edad+Cambio+Charlson_Index+
+              dirigido1_combinado+Actividad0+PCR2+Neisseria_M+T_empirico+
+              Listeria_M+diagetiol+diagetiol2+Año+lcr+Provisional, 
+            data=df,ntree = 500, block.size = 1,nodesize = 4,importance = T,na.action = c( "na.impute"))
+mod2
+```   
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+plot.variable(mod2, partial=T,plots.per.page = 2, xvar.names = c("Edad","Cambio","Charlson_Index",
+                                                                  "dirigido1_combinado","Actividad0","PCR2","Neisseria_M","T_empirico",
+                                                                  "Listeria_M","diagetiol","diagetiol2","Año","lcr","Provisional"),
+              notch=FALSE,surv.type = "surv",ylab="Supervivencia")
+              
+```  
+
+Analizando los resultados observamos que el error de predicción general ha disminuido en 8 puntos. También disminuye el CRPS (OOB) en mas de 2 puntos.  
+
+Los gráficos nos muestran que hay un grupo de variables que aportan un efecto mínimo o inexistente para predecir la mortalidad, por lo que se puede prescindir de ellas.  
+
+Nos quedamos con las tres variables más importantes: Edad, Cambio y Charlson_Index. Tambien trabajaremos en lo sucesivo con las variables dirigido1_combinado, PCR2, Año y diagetiol2. 7 variables en total. Con ellas construimos un nuevo modelo:  
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+set.seed(123)
+mod3<-rfsrc(Surv(tiempo,Muerte_atribuible )~Edad+Cambio+Charlson_Index+
+              dirigido1_combinado+PCR2+
+              diagetiol2+Año, 
+            data=df,ntree = 500, block.size = 1,nodesize = 4,importance = T,na.action = c( "na.impute"))
+mod3
+```   
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+plot.variable(mod3, partial=T,plots.per.page = 2, xvar.names = c("Edad","Cambio","Charlson_Index",
+                                                                  "dirigido1_combinado","PCR2",
+                                                                  "diagetiol2","Año"),
+              notch=FALSE,surv.type = "surv",ylab="Supervivencia")
+              
+```    
+
+El nuevo modelo mejora el error de prediccion y el el CRPS. Podemos señalar cómo el gráfico de efectos parciales de la edad muestra una forma funcional de dificil explicación.  
+En este punto, cabe preguntarse si es posible obtener un modelo con un error menor combinando algunas de las variables seleccionadas.  
+
+En la siguiente tabla se muestran las 10 mejores opciones de entre todas las combinaciones posibles, con las variables que se incluyen en el modelo y el error que se comete.  
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+#________________________Selección de las variables más importantes
+b_datos<-dplyr::select(df,tiempo,Muerte_atribuible,Edad,Cambio,Charlson_Index,Año,diagetiol2,dirigido1_combinado,PCR2)
+#_________________________
+
+########################################
+#Algoritmos para obtener todos los modelos posibles con su correspondiente error OOB
+# y así seleccionar el modelo que menos error de predicción cometa
+
+#_____funcion primera
+data_select<-function(df,Yvar,Xvar=NULL){
+  df<-df[,c(Yvar,Xvar)]
+  Xvar2<-2:(length(Xvar)+1)
+  return(df)
+}
+
+#_____funcion segunda (combinaciones tomandas de n en n)
+combinar<-function(df,Xvar=NULL,numXVar=1){
+  
+  comb_Var<-t(combn(Xvar,numXVar));combinaciones<-comb_Var
+  
+  colnames(combinaciones)<-NULL
+  
+  options(warn=-1)
+  
+  get_names<-function(df,x){
+    outcome<-matrix(data=NA,nrow=nrow(x),ncol=ncol(x))
+    for(i in 1:nrow(x)){
+      outcome[i,1:ncol(x)]<-colnames(df)[x[i,1:ncol(x)]]
+    }
+    return(outcome)
+  }
+  combn_names<-get_names(df,combinaciones)
+  return(combn_names)
+}
+
+#_____funcion tercera (obtención de los modelos y su error)
+Mconf<-function(df, x)
+{
+  filas<-nrow(ccc)
+  materr2<-matrix(nrow=filas,ncol=2)
+  colnames(materr2)<-c( "Variables", "Error")
+  rownames(materr2)<-paste("Modelo",c(1:filas))
+  for (i in 1:nrow(ccc)){
+    xnam <- as.matrix(ccc[i,])
+    fmla <- as.formula(paste("Surv(",colnames(b_datos[1]),",",colnames(b_datos[2]),") ~", paste(xnam, collapse= "+")))
+    
+    mod <- rfsrc(fmla, data = b_datos,ntree = 500)
+    df <- mod$data
+    prob = predict(mod,type = c("response"))
+    df$prob = prob
+    
+    fmla<-as.character(fmla)
+    #coeficiente<-summary(mod)$coefficients[2]
+    #pv<-summary(mod)$coefficients[8]
+    
+    #materr2[i,1]<-nrow(xnam)
+    materr2[i,1]<-fmla[3]
+    materr2[i,2]<-get.cindex(mod$yvar[,1], mod$yvar[,2], mod$predicted.oob)
+    #materr2[i,3]<-round(pv,4)
+    
+  }
+  return(materr2)
+}
+
+set.seed(123)
+ccc<-combinar(b_datos,c(3:9),1)
+d1<-Mconf(b_datos,ccc)
+
+ccc<-combinar(b_datos,c(3:9),2)
+d2<-Mconf(b_datos,ccc)
+
+ccc<-combinar(b_datos,c(3:9),3)
+d3<-Mconf(b_datos,ccc)
+
+ccc<-combinar(b_datos,c(3:9),4)
+d4<-Mconf(b_datos,ccc)
+
+ccc<-combinar(b_datos,c(3:9),5)
+d5<-Mconf(b_datos,ccc)
+
+ccc<-combinar(b_datos,c(3:9),6)
+d6<-Mconf(b_datos,ccc)
+
+ccc<-combinar(b_datos,c(3:9),7)
+d7<-Mconf(b_datos,ccc)
+
+#ccc<-combinar(b_datos,c(3:7),7)
+#d7<-Mconf(b_datos,ccc)
+
+dfinal<-rbind(d1,d2,d3,d4,d5,d6,d7)
+dfinal<-as.data.frame(dfinal)
+dfinal<-arrange(dfinal,Error)
+dfinalr<-slice(dfinal,1:10)
+dfinalr%>%
+  kbl(caption=" Todos los modelos posibles")%>%
+  kable_styling(full_width = F) 
+```  
+
+El modelo con menor error incluye cuatro variables: Cambio, Charlson_Index, dirigido1_combinado y PCR2. El Requested performance error es 0.282. Analizamos ests opción.
+
+## **MODELO CON MENOR ERROR OOB DE PREDICCION** 
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+mf1<-rfsrc(Surv(tiempo,Muerte_atribuible )~Cambio + Charlson_Index+ dirigido1_combinado + PCR2,
+           data=df,ntree = 1000,nodesize = 3)
+mf1
+```  
+
+
+
+### **Gráficos de efectos paciales**   
+
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+gg_v <- gg_variable(mf1, time = c(240, 720,1440),
+                    time.labels = c("10 dias", "30 dias","60 dias"))
+xvar <- c("Charlson_Index")
+xvar.cat <- c("Cambio","dirigido1_combinado","PCR2")
+
+xvar <- c(xvar, xvar.cat)
+
+partial_pbc <- mclapply(c(240,720), function(tm){
+plot.variable(mf1, surv.type = "surv", time = tm, xvar.names = xvar,
+partial = TRUE, show.plots = FALSE)})  
+
+gg_dta <- mclapply(partial_pbc, gg_partial)
+
+pbc_ggpart <- combine.gg_partial(gg_dta[[1]], gg_dta[[2]],
+                                    lbls = c("10 dias","30 dias"))
+ggpart <- pbc_ggpart
+```
+
+
+#### Variable Cambio
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+par(mfrow=c(1,2))
+plot.variable(mf1, partial=T,plots.per.page = 1, xvar.names = c("Cambio"),
+              notch=FALSE,surv.type = "surv",
+              main="Cambio y supervivencia a los 9 días",
+              xlab = "Cambio, 1=No ; 2=Sí")
+
+plot(gg_rfsrc(mf1,by="Cambio"),show.legend = F)+
+  labs(x="Tiempo en días")+
+  coord_cartesian(xlim = c(0,750))+
+  geom_vline(aes(xintercept=224.25),col="gray")+
+  #geom_vline(aes(xintercept=480),col="gray")+
+  scale_x_continuous(breaks = c(0,48,96,24*6,24*8,240,24*12,24*14,24*16,24*18,480,24*22,24*24,24*26,24*28,24*30),
+                     labels = c("0","2","4","6","8","10","12","14","16","18","20","22","24","26","28","30")) +
+  scale_color_discrete("Cambio", labels = c("No cambio", "Cambio"))+
+  labs(title = "Curvas supervivencia a 30 días. Variable Cambio")+
+  labs(subtitle = "En verde cambio de tratamiento, en rojo no cambio")+
+  labs(caption = "Linea vertical: 224.5 horas\n(Mediana del tiempo de seguimiento en horas)")
+
+              
+par(mfrow=c(1,1))
+```     
+
+*Gráfico de supervivencia en distintos tiempos de evolución*  
+
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+ggplot(pbc_ggpart[["Cambio"]], aes(y=yhat, x=Cambio, col=group))+
+geom_boxplot(notch = FALSE,
+                 outlier.shape = NA) + # panel=TRUE,
+  labs(x = "Cambio", y = "Survival (%)", color="Time", shape="Time") +
+  theme(legend.position = c(0.8, 0.2)) +
+  labs(title='Supervivencia según variable Cambio', 
+       subtitle='A los 10 y a los 30 días')
+```
+
+
+#### Variable dirigido1_combinado  
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+plot.variable(mf1, partial=T,plots.per.page = 1, xvar.names = c("dirigido1_combinado"),
+              notch=FALSE,surv.type = "surv",
+              main=" TD1 combinado y supervivencia a 9 días",
+              xlab = "TD1 combinado, 1=No ; 2=Sí") 
+
+plot(gg_rfsrc(mf1,by="dirigido1_combinado"),show.legend = F)+
+  labs(x="Tiempo en días")+
+  coord_cartesian(xlim = c(0,750))+
+  geom_vline(aes(xintercept=224.25),col="gray")+
+  #geom_vline(aes(xintercept=480),col="gray")+
+  scale_x_continuous(breaks = c(0,48,96,24*6,24*8,240,24*12,24*14,24*16,24*18,480,24*22,24*24,24*26,24*28,24*30),
+                     labels = c("0","2","4","6","8","10","12","14","16","18","20","22","24","26","28","30")) +
+  scale_color_discrete("dirigido1_combinado", labels = c("No PCR", "PCR"))+
+  labs(title = "Curvas supervivencia a 30 días. Variable dirigido1_combinado")+
+  labs(subtitle = "En verde combinado, en rojo no combinado")+
+  labs(caption = "Linea vertical: 224.5 horas")
+```    
+
+*Gráfico de supervivencia en distintos tiempos de evolución*  
+
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+ggplot(pbc_ggpart[["dirigido1_combinado"]], aes(y=yhat, x=dirigido1_combinado, col=group))+
+geom_boxplot(notch = FALSE,
+                 outlier.shape = NA) + # panel=TRUE,
+  labs(x = "dirigido1_combinado", y = "Survival (%)", color="Time", shape="Time") +
+  theme(legend.position = c(0.15, 0.2)) +
+  labs(title='Supervivencia según variable dirigido1_combinado', 
+       subtitle='A los 10 y a los 30 días')
+```
+
+#### Variable PCR2
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+plot.variable(mf1, partial=T,plots.per.page = 1, xvar.names = c("PCR2"),
+              notch=FALSE,surv.type = "surv",
+              main="PCR y supervivencia a 9 días",
+              xlab = "PCR, 1=No ; 2=Sí")  
+
+plot(gg_rfsrc(mf1,by="PCR2"),show.legend = F)+
+  labs(x="Tiempo en días")+
+  coord_cartesian(xlim = c(0,750))+
+  geom_vline(aes(xintercept=224.25),col="gray")+
+  #geom_vline(aes(xintercept=480),col="gray")+
+  scale_x_continuous(breaks = c(0,48,96,24*6,24*8,240,24*12,24*14,24*16,24*18,480,24*22,24*24,24*26,24*28,24*30),
+                     labels = c("0","2","4","6","8","10","12","14","16","18","20","22","24","26","28","30")) +
+  scale_color_discrete("Cambio", labels = c("No PCR", "PCR"))+
+  labs(title = "Curvas supervivencia a 30 días. Variable PCR")+
+  labs(subtitle = "En verde PCR realizada, en rojo no PCR")+
+  labs(caption = "Linea vertical: 224.5 horas")
+```      
+
+*Gráfico de supervivencia en distintos tiempos de evolución*  
+
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+ggplot(pbc_ggpart[["PCR2"]], aes(y=yhat, x=PCR2, col=group))+
+geom_boxplot(notch = FALSE,
+                 outlier.shape = NA) + # panel=TRUE,
+  labs(x = "PCR realizada", y = "Survival (%)", color="Time", shape="Time") +
+  theme(legend.position = c(0.1, 0.2)) +
+  labs(title='Supervivencia según  realización de PCR', 
+       subtitle='A los 10 y a los 30 días')
+```
+
+#### Variable Indice de Charlson
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+plot.variable(mf1, partial=T,plots.per.page = 1, xvar.names = c("Charlson_Index"),
+              notch=FALSE,surv.type = "surv",
+              main="I.Charlson y supervivencia 9 días")
+```  
+
+*Gráfico de supervivencia en distintos tiempos de evolución*  
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+
+ggpart$Cambio <- NULL
+ggpart$PCR2 <- NULL
+ggpart$dirigido1_combinado <- NULL
+
+plot(ggpart, panel = TRUE,size=3) + 
+  labs(x = "", y = "Survival", color = "Time", shape = "Time") +
+  theme(legend.position = c(0.1, 0.2))+
+  labs(title='Supervivencia según el I. Charlson', 
+       subtitle='A los 10 y a los 30 días')
+```    
+
+## Explorando las variables diagetiol2 y Año  
+
+Tras los análisis estadísticos descriptivo y bivariado concluiamos que en pacientes con meningitis, los tiempos de respuesta desde microbiologia han mejorado en los dos últimos años. En el análisis random forest  de supervivencia concluimos que la introduccion de las tecnicas de PCR, que ya observabamos que habian influido en la mejora de los tiempos de respuesta,  se asocian claramente con la supervivencia.  
+
+Ahora nos interesa explorar como se relaciona con la mortalidad  el tiempo que transcurre desde la prueba rápida hasta la identificación del microorganismo causante de la enfermedad.  
+
+Otro aspecto interesante a analizar se basa en la idea de que, si el año se asocia con la mejora de los tiempos de respuesta, tal  vez debería estar asociado con la mortalidad.  
+
+Ambas variables, que hemos llamado diagetiol 2 y Año respectivamente, son variables importantes en el modelo original, y se mantienen en el top 10 tras el proceso de selección que hemos implementado.  
+
+Para mostrar los graficos de efectos parciales de ambas variables ajustaremos un nuevo modelo con seis variables, que ocupa el puesto 10 entre los que menos error de predicción cometen.  
+
+El modelo es el siguiente:  
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+
+set.seed(123)
+mf4<-rfsrc(Surv(tiempo,Muerte_atribuible )~Cambio + Charlson_Index + dirigido1_combinado + PCR2+diagetiol2+Año,data=df,ntree = 1000,nodesize = 4)
+mf4
+```  
+
+### Gráficos de efectos parciales   
+
+#### Variable Año  
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+plot.variable(mf4, partial=T,plots.per.page = 1, xvar.names = c("Año"),
+              notch=FALSE,surv.type = "surv",
+              main="Año y supervivencia 9 días")
+```   
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+gg_v <- gg_variable(mf4, time = c(240, 720,1440),
+                    time.labels = c("10 dias", "30 dias","60 dias"))
+xvar <- c("diagetiol2","Charlson_Index")
+xvar.cat <- c("Año","Cambio","dirigido1_combinado","PCR2")
+
+xvar <- c(xvar, xvar.cat)
+
+partial_pbc <- mclapply(c(240,720), function(tm){
+plot.variable(mf4, surv.type = "surv", time = tm, xvar.names = xvar,
+partial = TRUE, show.plots = FALSE)})  
+
+gg_dta <- mclapply(partial_pbc, gg_partial)
+
+pbc_ggpart <- combine.gg_partial(gg_dta[[1]], gg_dta[[2]],
+                                    lbls = c("10 dias","30 dias"))
+ggpart <- pbc_ggpart
+
+ggplot(pbc_ggpart[["Año"]], aes(y=yhat, x=Año, col=group))+
+  geom_boxplot(notch = FALSE,
+               outlier.shape = NA) + # panel=TRUE,
+  labs(x = "Año: 1=2017, 2=2018, 3=2019, 4=2020, 5=2021", y = "Survival (%)", color="Time", shape="Time") +
+  theme(legend.position = c(0.8, 0.2)) 
+
+```
+
+
+
+#### Variable diagetiol2
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+plot.variable(mf4, partial=T,plots.per.page = 1, xvar.names = c("diagetiol2"),
+              notch=FALSE,surv.type = "surv",
+              main="diagetiol2 y supervivencia 9 días")
+```  
+
+
+```{r, echo=FALSE,warning=FALSE,comment="",message=FALSE}
+
+ggpart$Año <- NULL
+ggpart$PCR2<- NULL
+ggpart$Cambio<- NULL
+ggpart$dirigido1_combinado<- NULL
+ggpart$Charlson_Index<- NULL
+
+plot(ggpart, panel = TRUE,size=3) + 
+  labs(x = "", y = "Survival", color = "Time", shape = "Time") +
+  theme(legend.position = c(0.85, 0.25))+
+  labs(title='Supervivencia según diagetiol2', 
+       subtitle='A los 10 y a los 30 días')
+```  
+
+# Conclusiones  
+
+. La introducción del diagnóstico rápido  mediante PCR se asocia con la mortalidad, de manera que los pacientes con los que se utiliza esta técnica presentan un porcentaje de supervivencia (mediana a los 10 días del 92%) mejor que en los que no se utiliza (mediana del 87%).   
+
+. El cambio del tratamiento empírico a tratamieto dirigido tras los informes microbiológicos en los tres puntos temporales recogidos (tras diagnóstico rápido, tras informe provisional y tras informe definitivo), implica una mayor supervivencia frente a los pacientes que mantienen el tratamiento empírico hasta el evento final (muerte o alta). Mediana de supervivencia a los 10 días del 94% frente al 66%.  
+
+. El indice de Charlson se asocia con la supervivencia, de manera que puntuaciones menores de 2 presentan un porcentaje de supervivencia mayor que el resto.  La forma funcional del gráfico de efectos presenta una caida  de mas de 10 puntos poecentuales en la supervivencia con las puntuciones 3, 4 y 5 en el índice. Las puntuaciones superiores a 5 recuperan la probabilidad de sobrevivir pero siempre por debajo de las puntuaciones inferiores a dos puntos.  Esta forma no lineal debe de discutirse desde la perspectiva clínica.
+
+. El hecho de obtener un tratamiento dirigido tras la prueba rápida usando dos o mas antibióticos se socia fuertemente con la mortalidad. Los pacientes con tratamiento combinado sobreviven menos que los que no lo tienen. En el análisis RF esta variable tiene (inesperadamente) una importancia alta y aparece en la mayoría de los modelos mas válidos. No tengo una explicación clara para este hecho, pero pienso que, probablemente, esta variable está asociada con otras variables, y su importancia en los modelos tiene que ver con esa asociación. Así, si contruimos una tabla de contingencia con la variable PCR y el tratamiento dirigido combinado, y analizamos si existe asociación, obtenemos una chi cuadrado con una p = 0.0003.  Probablemente habría que repetir el análisis eliminado esta variable del modelo.   
+
+. El tiempo transcurrido desde la prueba rápida hasta la identificación del microorganismo causante de la infección tambien se asocia con la mortalidad. El gráfico de efectos muestra una curva de supervivencia descendente con una caida brusca en los valores alrededor de las 9 horas. Esta escotadura tampoco tiene, en principio una explicación clara.  
+
+. Por último el año, que mostraba una asociación clara con la mejora de los tiempos de respuesta , presenta una relacion compleja con la mortalidad, con relacioes cambiantes a los 10 y a los 30 dias de seguimiento, tal y como se observa en los gráficos de efectos parciales.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
