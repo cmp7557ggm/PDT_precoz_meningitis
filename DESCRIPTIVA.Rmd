@@ -1,0 +1,488 @@
+---
+title: "Descriptiva meningitis"
+author: "Carlos Martin Perez"
+date: "2022-12-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r carga,include=FALSE}
+library(dplyr)
+library(survival)
+library(knitr)
+library(dplyr)
+library(gridExtra)
+library(openintro)
+library(plotrix)
+library(formattable)
+library(KMsurv)
+library(MASS)
+library(ggplot2)
+library(plotly)
+library(survminer)
+library(ggalluvial)
+library(circlize)
+library(readxl)
+library(pillar)
+library(kableExtra)
+library(survival)
+library(VSURF)
+library(KMsurv)
+library(randomForestSRC)
+```
+
+```{r carga2,warning=FALSE,include=FALSE}
+mening <- read_excel("/Users/carlosmartinperez/Desktop/MENINGITIS/Meningitis pre-intervención.xlsx",sheet = 2)
+save("mening", file="/Users/carlosmartinperez/Desktop/MENINGITIS/mening.RData")
+.n<-nrow(mening)
+```  
+
+# Introducción
+
+Se analiza una base de datos constituida por `r .n` pacientes que fueron ingresados en el HUVR por presentar cuadro compatible con meningitis.
+
+```{r,warning=FALSE,echo=FALSE}
+
+.n<-nrow(mening)
+sep<-table(mening$Diagnostico_sindromico)[1]
+ sepp<-(sep/.n)*100
+ sepn<-table(mening$Diagnostico_sindromico)[2]
+ sepnp<-(sepn/.n)*100
+
+ Frecuencia<-table(mening$Diagnostico_sindromico)
+Porcentaje<-round(100*Frecuencia/sum(Frecuencia), 2)
+dt<-cbind(Frecuencia,Porcentaje)
+dt %>%
+  kbl(caption="Diagnóstico sindrómico")%>%
+kable_styling()
+```  
+
+La mayoría de los pacientes (`r table(mening$Adquisición)[1]`) presentaban adquisición comunitaria, mientras que en un solo caso la adquisición fue nosocomial. En otros `r table(mening$Adquisición)[2]` se desconocía el mecanismo de adquisición.
+
+Las muertes atribuibles a meningitis o meningoencefalitis fueron `r sum(mening$Muerte_atribuible)`, lo que supone un `r round((sum(mening$Muerte_atribuible)*100)/dim(mening)[1],1)`% del total de pacientes incluidos.
+
+# Análisis descriptivo
+
+En esta sección se muestran frecuencias y porcentajes para las variables cualitativas, y medidas de posicion central y de dispersion para las variables numéricas.  
+
+```{r calculos, include=FALSE}
+
+hombres<- table(mening$Sexo)[1]
+mujeres<-table(mening$Sexo)[2]
+rec<-table(mening$Muerte_atribuible)[2]
+recid<-dplyr::filter(mening,Muerte_atribuible==1)
+time<-recid$Desde_diag_alta
+time_dias<-recid$Desde_diag_alta_en_dias
+timec<-mean(mening$Desde_diag_alta)
+sep<-table(mening$Diagnostico_sindromico)[1]
+sepp<-(sep/.n)*100
+sepn<-table(mening$Diagnostico_sindromico)[2]
+sepnp<-(sepn/.n)*100
+soc<-table(mening$Diagnostico_sindromico)[3]
+socp<-(soc/.n)*100
+socn<-table(mening$Diagnostico_sindromico)[4]
+socpn<-(socn/.n)*100
+
+```
+
+La cohorte esta compuesta por `r .n` pacientes que presentaron meningitis .
+
+De los pacientes que integran el grupo de estudio `r hombres` son hombres (el `r round(hombres/.n,2)*100` por ciento).
+
+La edad media de los pacientes es de `r round(mean(mening$Edad),2)` años con una mediana de `r median(mening$Edad)` años. La edad menor es `r min(mening$Edad)` años y la edad maxima `r max(mening$Edad)` .
+
+#### **Antecedentes personales de los pacientes** {#t3a}  
+
+`r table(mening$Smoking_history)[2]` pacientes eran fumadores (`r round((table(mening$Smoking_history)[2]*100)/.n,1)`% del total).
+
+`r table(mening$Drinking_history)[2]` pacientes consumían alcohol de forma habitual (`r round((table(mening$Drinking_history)[2]*100)/.n,1)`%)
+
+El `r round((table(mening$Diabetes)[2]*100)/.n,1)`% de los pacientes presentaban diabetes tipo 2 (`r table(mening$Diabetes)[2]` en total)
+
+`r table(mening$Hypertension)[2]` pacientes eran hipertensos (`r round((table(mening$Hypertension)[2]*100)/.n,1)`% del total)
+
+`r table(mening$Chronic_lung_disease)[2]` pacientes presentaban enfermedad pulmonar crónica (`r round((table(mening$Chronic_lung_disease)[2]*100)/.n,1)`%)
+
+El `r round((table(mening$OSA)[2]*100)/.n,1)`% de los pacientes presentaban apnea obstructiva del sueño (`r table(mening$OSA)[2]` en total)
+
+`r table(mening$Cerebrovascular_disease)[2]` pacientes presentaban antecedentes de enfermedad cerebrovascular (`r round((table(mening$Cerebrovascular_disease)[2]*100)/.n,1)`% del total)
+
+`r table(mening$Cancer)[2]` pacientes presentaban enfermedad oncológica (`r round((table(mening$Cancer)[2]*100)/.n,1)`%)
+
+El `r round((table(mening$Chronic_Kidney_disease)[2]*100)/.n,1)`% de los pacientes presentaban enfermedad renal crónica (`r table(mening$Chronic_Kidney_disease)[2]` en total)
+
+`r table(mening$Chronic_liver_impairment)[2]` pacientes presentaban hepatopatía crónica (`r round((table(mening$Chronic_liver_impairment)[2]*100)/.n,1)`% del total)
+
+`r table(mening$MIS)[2]` pacientes tomaban medicación inmunosupresora (`r round((table(mening$MIS)[2]*100)/.n,1)`%)  
+
+<br> <br>
+
+<center>TABLA RESUMEN</center>
+
+|      Factor de riesgo       |                  Frecuencia                   |                      Porcentaje del total                       |
+|:---------------:|:---------------------:|:------------------------------:|
+|          Fumadores          |     `r table(mening$Smoking_history)[2]`      |     `r round((table(mening$Smoking_history)[2]*100)/.n,1)`      |
+|       Consumo alcohol       |     `r table(mening$Drinking_history)[2]`     |     `r round((table(mening$Drinking_history)[2]*100)/.n,1)`     |
+|      Diabetes Mellitus      |         `r table(mening$Diabetes)[2]`         |         `r round((table(mening$Diabetes)[2]*100)/.n,1)`         |
+|        Hipertensión         |       `r table(mening$Hypertension)[2]`       |       `r round((table(mening$Hypertension)[2]*100)/.n,1)`       |
+| Enfermedad pulmonar crónica |   `r table(mening$Chronic_lung_disease)[2]`   |   `r round((table(mening$Chronic_lung_disease)[2]*100)/.n,1)`   |
+| Apnea obstructiva del sueño |           `r table(mening$OSA)[2]`            |           `r round((table(mening$OSA)[2]*100)/.n,1)`            |
+| Enfermedad cerebrovascular  | `r table(mening$Cerebrovascular_disease)[2]`  | `r round((table(mening$Cerebrovascular_disease)[2]*100)/.n,1)`  |
+|   Tratamiento oncológico    |          `r table(mening$Cancer)[2]`          |          `r round((table(mening$Cancer)[2]*100)/.n,1)`          |
+|  Enfermedad renal crónica   |  `r table(mening$Chronic_Kidney_disease)[2]`  |  `r round((table(mening$Chronic_Kidney_disease)[2]*100)/.n,1)`  |
+|     Hepatopatía crónica     | `r table(mening$Chronic_liver_impairment)[2]` | `r round((table(mening$Chronic_liver_impairment)[2]*100)/.n,1)` |
+| Medicación inmunosupresora  |           `r table(mening$MIS)[2]`            |           `r round((table(mening$MIS)[2]*100)/.n,1)`            |
+
+#### **Tratamientos crónicos**  
+
+`r table(mening$Statin)[2]` pacientes tomaban estatinas (`r round((table(mening$Statin)[2]*100)/.n,1)`% del total).
+
+`r table(mening$ACE_inhibitor_ARB)[2]` pacientes tomaban inhibidores de la enzima de conversión de la angiotensina (`r round((table(mening$ACE_inhibitor_ARB)[2]*100)/.n,1)`% del total).
+
+Tomaban glucocorticoides un total de `r table(mening$Systemic_glucocorticoid)[2]`, es decir, un `r round((table(mening$Systemic_glucocorticoid)[2]*100)/.n,1)`% del total
+
+`r table(mening$oral_anticoagulant_warfarin)[2]` pacientes estaban anticoagulados (`r round((table(mening$oral_anticoagulant_warfarin)[2]*100)/.n,1)`% del total)
+
+El `r round((table(mening$Antibiotic)[2]*100)/.n,1)`% de los pacientes tomaban antibióticos en los días previos al episodio séptico (`r table(mening$Antibiotic)[2]` en total) <br>
+
+<center>TABLA RESUMEN</center>
+
+|   Tratamiento    |                    Frecuencia                    |                        Porcentaje del total                        |
+|:--------------:|:----------------------:|:-------------------------------:|
+|      Statin      |           `r table(mening$Statin)[2]`            |           `r round((table(mening$Statin)[2]*100)/.n,1)`            |
+|      IECAS       |      `r table(mening$ACE_inhibitor_ARB)[2]`      |      `r round((table(mening$ACE_inhibitor_ARB)[2]*100)/.n,1)`      |
+| Glucocorticoides |   `r table(mening$Systemic_glucocorticoid)[2]`   |   `r round((table(mening$Systemic_glucocorticoid)[2]*100)/.n,1)`   |
+|    Warfarina     | `r table(mening$oral_anticoagulant_warfarin)[2]` | `r round((table(mening$oral_anticoagulant_warfarin)[2]*100)/.n,1)` |
+|   Antibióticos   |         `r table(mening$Antibiotic)[2]`          |         `r round((table(mening$Antibiotic)[2]*100)/.n,1)`          |
+
+#### **Indice de Charlson** {#t3c}
+
+La media de los pacientes en el índice de Charlson es de `r round(mean(mening$Charlson_Index,na.rm=T),2)` puntos con una mediana de `r median(mening$Charlson_Index,na.rm=T)`. El menor puntaje obtenido fué de `r min(mening$Charlson_Index,na.rm=T)`, y el máximo `r max(mening$Charlson_Index,na.rm=T)` puntos.
+
+`r table(mening$charlson_Index3)[2]` pacientes presentaban un índice e Charlson mayor de tres puntos, lo que representa el `r round((table(mening$charlson_Index3)[2]*100)/.n,1)`% del total de pacientes. <br>    
+
+#### **Puntuacion de Glasgow al ingreso**   
+
+La media de puntuación Glasgow es de `r round(mean(mening$Glasgow,na.rm=T),2)` puntos con una mediana de `r median(mening$Glasgow,na.rm=T)`. El menor puntaje obtenido fué de `r min(mening$Glasgow,na.rm=T)`, y el máximo `r max(mening$Glasgow,na.rm=T)` puntos.  
+
+#### **Ingreso en UCI**   
+
+`r table(mening$UCI)[2]` ingresaron en UCI, lo que representa el `r round((table(mening$UCI)[2]*100)/.n,1)`% del total de pacientes. <br>   
+
+```{r , echo=FALSE, warning=FALSE}
+Frecuencia<-table(mening$UCI)
+Porcentaje<-round(100*Frecuencia/sum(Frecuencia), 2)
+dt<-cbind(Frecuencia,Porcentaje)
+dt %>%
+  kbl(caption="Ingreso en UCI")%>%
+kable_styling()
+```
+
+
+#### **Procedencia de los pacientes**
+
+<center>TABLA RESUMEN</center>
+
+```{r , echo=FALSE, warning=FALSE,results='asis',caption="tabla foco"}
+Pacientes<-table(mening$Procedencia)
+Porcentaje<-round(100*Pacientes/sum(Pacientes), 2)
+dt<-cbind(Pacientes,Porcentaje)
+dt %>%
+  kbl(caption="Procedencia de los pacientes")%>%
+  kable_styling()
+#knitr::kable(cbind(t1,t2),col.names = c("Frecuencia", "Porcentaje"), align = "c")
+
+```
+
+#### **Tratamiento antibiótico previo**
+
+`r table(mening$TABP)[2]` pacientes habían tomado antibióticos antes de la presentación de sintomas compatibles con meningitis, (un `r round((table(mening$TABP)[2]*100)/.n,1)`% del total).
+
+Un paciente había sido tratado con aciclovir y otro paciente con tres antibióticos (Amikacina,Vancomicina y Piperatazo).
+
+#### **Tratamiento empírico**
+
+Desde el diagnóstico se instauró tramiento empírico en `r table(mening$T_empirico)[2]` casos, es decir en el `r round((table(mening$T_empirico)[2]*100)/.n,1)`%.
+
+Los tratamientos empleados fueron:
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+  
+  Frecuencia<-table(mening$Tipo_empirico)
+  Porcentaje<-round(100*Frecuencia/sum(Frecuencia), 2)
+  dt<-cbind(Frecuencia,Porcentaje)
+  dt %>%
+    kbl(caption="Tratamiento empírico")%>%
+    kable_styling()
+```  
+
+De todos los tratamientos empíricos, `r table(mening$T_em_combinado)[2]` fueron tratamientos combinados con dos o más antibióticos (`r round((table(mening$T_em_combinado)[2]*100)/.n,1)`%), y en `r table(mening$T_em_mixto)[2]` ocasiones el tratamiento fué mixto (`r round((table(mening$T_em_mixto)[2]*100)/.n,1)`%).
+
+Si se analiza la actividad de los tratamientos, encontramos que en `r table(mening$Actividad0)[2]` casos fueron inactivos (`r round((table(mening$Actividad0)[2]*100)/.n,1)`%), y en `r table(mening$Actividad0)[1]` casos fueron activos (`r round((table(mening$Actividad0)[1]*100)/.n,1)`%).
+
+#### **Diagnóstico bioquímico**
+
+Salvo en un caso, a todos los pacientes que se les tomó una muestra de LCR, se le realizaron las pruebas bioquímicas habituales.
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+mening$Glucosa<-as.numeric(mening$Glucosa)
+meninglcr<-dplyr::select(mening, Celulas,	Hematies,	PMN,	Mono,Glucosa,	Proteína,)
+cel<-dplyr::filter(meninglcr,Celulas>5)
+celn<-dplyr::filter(meninglcr,Celulas<6)
+hem<-dplyr::filter(meninglcr,Hematies>0)
+hemn<-dplyr::filter(meninglcr,Hematies==0)
+glu1<-dplyr::filter(meninglcr,Glucosa<0.5)
+glu2<-dplyr::filter(meninglcr,Glucosa>0.8)
+prot1<-dplyr::filter(meninglcr,Proteína>0.45)
+prot1 <- prot1[!is.na(prot1$Proteína),]
+glu2 <- glu2[!is.na(glu2$Glucosa),]
+glu1 <- glu1[!is.na(glu1$Glucosa),]
+cel <- cel[!is.na(cel$Celulas),]
+celn<- celn[!is.na(celn$Celulas),]
+hem <- hem[!is.na(hem$Hematies),]
+hemn <- hemn[!is.na(hemn$Hematies),]
+meninglcr <- meninglcr[!is.na(meninglcr$PMN),]
+pmn<-mean(meninglcr$PMN)
+mono<-mean(meninglcr$Mono)
+```
+
+Así, en `r nrow(cel)` muestras se obtuvieron recuentos por encima de 5 células, frente a los `r nrow(celn)` recuentos por debajo de esa cifra, lo que supone un `r round(nrow(cel)*100/(nrow(cel)+nrow(celn)),1)`% frente al `r round(nrow(celn)*100/(nrow(cel)+nrow(celn)),1)`%.
+
+En `r nrow(hem)` casos, el (`r round(nrow(hem)*100/(nrow(hem)+nrow(hemn)),1)`%), se detectaron hematíes en la muestra.
+
+De media, el `r round(pmn,1)`% de las células encontradas eran PMN frente al `r round(mono,1)`% de monocitos.
+
+Por lo que respecta a la glucosa en LCR, `r nrow(glu1)` pacientes presentaron cifras por debajo de 0.5 gramos/litro (`r round(nrow(glu1)*100/nrow(meninglcr),1)`% del total de determinaciones), mientras que `r nrow(glu2)` presentaron cifras por encima de los 80 g/l (`r round(nrow(glu2)*100/nrow(meninglcr),1)`)%.
+
+Finalmente, `r nrow(prot1)` pacientes presentaron niveles de proteina por encima de los 0.45 g/l, lo que supone el `r round(nrow(prot1)*100/nrow(meninglcr),1)`% del total.  
+
+### **Diagnóstico Microbiológico**
+
+#### **Prueba rápida**
+
+En todos los casos se realizó una prueba rápida utilizando la tincion de Gram, la detección de antígeno para Neumococo, y la PCR en distintas combinaciones, tal y como queda reflejado en la siguiente tabla:
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+Frecuencia<-table(mening$Tipo_prueba_rapida)
+  Porcentaje<-round(100*Frecuencia/sum(Frecuencia), 2)
+  dt<-cbind(Frecuencia,Porcentaje)
+  dt %>%
+    kbl(caption="Tipos de prueba rápida realizadas")%>%
+    kable_styling()
+```
+
+Con la prueba rápida se obtuvieron `r table(mening$Resultado_prueba_rapida)[2]` resultados positivos y `r table(mening$Resultado_prueba_rapida)[1]` negativos.\
+La relación entre tipo de prueba rápida y resultado se muestra en la siguiente tabla:
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+t1<-table(mening$Tipo_prueba_rapida,mening$Resultado_prueba_rapida)
+t1 %>%
+    kbl(caption="Resultados prueba rápida")%>%
+    kable_styling()
+```
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+t2<-table(mening$Diagnostico_sindromico,mening$Resultado_prueba_rapida)
+t2 %>%
+    kbl(caption="Resultados prueba rápida según diagnóstico sindrómico")%>%
+    kable_styling()
+```
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+t3<-table(mening$Agente_etiologico_detectado,mening$Resultado_prueba_rapida)
+t3 %>%
+    kbl(caption="Resultados prueba rápida según microorganismo detectado")%>%
+    kable_styling()
+```
+
+#### Tinción de Gram
+
+La tinción de Gram se realizó en todos los pacientes incluidos en la base de datos. Los resultados se muestran en la siguiente tabla:
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+Frecuencia<-table(mening$Resultado_Gram)
+  Porcentaje<-round(100*Frecuencia/sum(Frecuencia), 2)
+  dt<-cbind(Frecuencia,Porcentaje)
+  dt %>%
+    kbl(caption="Resultados del Gram")%>%
+    kable_styling()
+```
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+t3<-table(mening$Agente_etiologico_detectado,mening$Resultado_Gram)
+t3 %>%
+    kbl(caption="Resultados del Gram según microorganismo detectado")%>%
+    kable_styling()
+```
+
+#### Antígeno neumococo
+
+La presencia del antigeno del neumococo se estudió en `r table(mening$Resultado_antigeno)[1]+table(mening$Resultado_antigeno)[3]` pacientes. Los resultados son los siguientes:
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+Frecuencia<-table(mening$Resultado_antigeno)
+  Porcentaje<-round(100*Frecuencia/sum(Frecuencia), 2)
+  dt<-cbind(Frecuencia,Porcentaje)
+  dt %>%
+    kbl(caption="Resultados Antígeno neumococo")%>%
+    kable_styling()
+```
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+t3<-table(mening$Agente_etiologico_detectado,mening$Resultado_antigeno)
+t3 %>%
+    kbl(caption="Resultados del Antígeno de neumococo según microorganismo detectado")%>%
+    kable_styling()
+```
+
+#### PCR
+
+La PCR se realizó en `r .n-table(mening$PCR)[5]` enfermos, con los siguientes resultados:
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+Frecuencia<-table(mening$PCR)
+  Porcentaje<-round(100*Frecuencia/sum(Frecuencia), 2)
+  dt<-cbind(Frecuencia,Porcentaje)
+  dt %>%
+    kbl(caption="Resultados PCR")%>%
+    kable_styling()
+```  
+
+### **Cambio de tratamiento tras prueba rápida**
+
+```{r , echo=FALSE, warning=FALSE}
+ct<-table(mening$Cambio_Tto1)[2]
+```
+
+Tras la prueba rápida se produjo un cambio en el tratamiento empírico en `r ct` ocasiones.
+
+En este punto, el tratamiento de los pacientes queda como sigue:
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+  #neumonia<-read_excel("neumonia.xlsx")
+  Frecuencia<-table(mening$Tipo_dirigido1)
+  Porcentaje<-round(100*Frecuencia/sum(Frecuencia), 2)
+  dt<-cbind(Frecuencia,Porcentaje)
+  dt %>%
+    kbl(caption="Tratamiento empírico")%>%
+    kable_styling()
+#neumonia$T_em_combinado<-neumonia$T_em_combinado...35 
+#neumonia$T_em_mixto<-neumonia$T_em_mixto...36
+```
+
+El **espectro DOORMAT** de los tratamientos tras las pruebas rápidas fue:
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+      #neumonia<-read_excel("neumonia.xlsx")
+      Frecuencia<-table(mening$Espectro_DOORMAT1)
+      Porcentaje<-round(100*Frecuencia/sum(Frecuencia), 2)
+      dt<-cbind(Frecuencia,Porcentaje)
+      dt %>%
+        kbl(caption="Espectro DOORMAT Cambio TTo 1")%>%
+        kable_styling()
+```
+
+Considerando los tratamientos tras prueba rapida, `r table(mening$dirigido1_combinado)[2]` fueron tratamientos combinados con dos o más antibióticos (`r round((table(mening$dirigido1_combinado)[2]*100)/.n,1)`%), y en `r table(mening$dirigido1_mixto)[2]` ocasiones el tratamiento fué mixto (`r round((table(mening$dirigido1_mixto)[2]*100)/.n,1)`%).
+
+Todos los tratamientos fueron activos.
+
+**Puntuación DOORMAT**
+
+Puntuación media de `r round(mean(mening$DOORMAT1,na.rm =TRUE),1)` puntos, con una mediana de `r median(mening$DOORMAT1,na.rm =TRUE)`. El valor mínimo fue `r min(mening$DOORMAT1, na.rm =TRUE)` y el máximo `r max(mening$DOORMAT1, na.rm =TRUE)`.
+
+### **Cambio de tratamiento tras informe provisional**
+
+Se emitió un informe provisional en `r table(mening$Provisional)[2]` casos, lo que originó `r table(mening$Cambio_Tto2)[2]` cambios de tratamiento. Tras esos cambios, los tratamientos quedaron como sigue:
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+  
+  Frecuencia<-table(mening$Tipo_dirigido2)
+  Porcentaje<-round(100*Frecuencia/sum(Frecuencia), 2)
+  dt<-cbind(Frecuencia,Porcentaje)
+  dt %>%
+    kbl(caption="Tratamiento dirigido 2")%>%
+    kable_styling()
+```
+
+El **espectro DOORMAT** de los tratamientos tras el informe fue:
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+     
+      Frecuencia<-table(mening$Espectro_DOORMAT2)
+      Porcentaje<-round(100*Frecuencia/sum(Frecuencia), 2)
+      dt<-cbind(Frecuencia,Porcentaje)
+      dt %>%
+        kbl(caption="Espectro DOORMAT Cambio TTo 2")%>%
+        kable_styling()
+```
+
+Considerando los tratamientos tras el informe provisional, `r table(mening$T_dirigido2_combinado)[2]` fueron tratamientos combinados con dos o más antibióticos (`r round((table(mening$T_dirigido2_combinado)[2]*100)/.n,1)`%), y en `r table(mening$T_dirigido2_mixto)[2]` ocasiones el tratamiento fué mixto (`r round((table(mening$T_dirigido2_mixto)[2]*100)/.n,1)`%).
+
+Todos los tratamientos fueron activos.
+
+**Puntuación DOORMAT**
+
+Puntuación media de `r round(mean(mening$DOORMAT2,na.rm =TRUE),1)` puntos, con una mediana de `r median(mening$DOORMAT2,na.rm =TRUE)`. El valor mínimo fue `r min(mening$DOORMAT2, na.rm =TRUE)` y el máximo `r max(mening$DOORMAT2, na.rm =TRUE)`.
+
+### **Cambio de tratamiento tras informe definitivo**
+
+Se emitió un informe definitivo en todos los casos, lo que originó `r table(mening$Cambio_Tto3)[3]` cambios de tratamiento. Tras esos cambios, los tratamientos quedaron como sigue:
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+  
+  Frecuencia<-table(mening$Tipo_dirigido3)
+  Porcentaje<-round(100*Frecuencia/sum(Frecuencia), 2)
+  dt<-cbind(Frecuencia,Porcentaje)
+  dt %>%
+    kbl(caption="Tratamiento dirigido 3")%>%
+    kable_styling()
+```
+
+**Perfil DOORMAT**
+
+El perfil DOORMAT en todos los casos fue S/S/S/S/S
+
+El **espectro DOORMAT** de los tratamientos tras el informe final fue:
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+     
+      Frecuencia<-table(mening$Espectro_DOORMAT3)
+      Porcentaje<-round(100*Frecuencia/sum(Frecuencia), 2)
+      dt<-cbind(Frecuencia,Porcentaje)
+      dt %>%
+        kbl(caption="Espectro DOORMAT Cambio TTo 3")%>%
+        kable_styling()
+```
+
+Considerando los tratamientos tras el informe provisional, `r table(mening$T_dirigido3_combinado)[2]` fueron tratamientos combinados con dos o más antibióticos (`r round((table(mening$T_dirigido3_combinado)[2]*100)/.n,1)`%). No hubo tratamientos mixtos.
+
+Todos los tratamientos en esta fase fueron activos.
+
+**Puntuación DOORMAT**
+
+Puntuación media de `r round(mean(mening$DOORMAT3,na.rm =TRUE),1)` puntos, con una mediana de `r median(mening$DOORMAT3,na.rm =TRUE)`. El valor mínimo fue `r min(mening$DOORMAT3, na.rm =TRUE)` y el máximo `r max(mening$DOORMAT3, na.rm =TRUE)`.
+
+## Microorganismos identificados segun cultivo vs todas las pruebas utilizadas
+
+En la vertical se muestran los microorganismos identificados en el cultivo (incluyendo resultado negativo), y en la horizontal todos los microorganismos identificados por cualquier método.
+
+```{r , echo=FALSE, warning=FALSE,results='asis'}
+     
+      Frecuencia<-table(mening$Resultado_cultivo,mening$Agente_etiologico_detectado)
+      
+      Frecuencia %>%
+        kbl(caption="Microorganismos identificados")%>%
+        kable_styling()%>%
+        row_spec(4, bold = T, color = "white", background = "#D7261E")
+```
+
+Como se aprecia en la tabla de doble entrada, el cultivo da **cinco falsos negativos** para bacterias, dos para Listeria monocytogenes y tres para Neisseria meningitidis.
+
+
+
+
+
+
