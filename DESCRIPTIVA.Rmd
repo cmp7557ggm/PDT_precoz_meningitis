@@ -10,33 +10,27 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r carga,include=FALSE}
-library(dplyr)
-library(survival)
 library(knitr)
 library(dplyr)
 library(gridExtra)
 library(openintro)
 library(plotrix)
 library(formattable)
-library(KMsurv)
 library(MASS)
 library(ggplot2)
 library(plotly)
-library(survminer)
-library(ggalluvial)
-library(circlize)
 library(readxl)
 library(pillar)
 library(kableExtra)
-library(survival)
-library(VSURF)
-library(KMsurv)
-library(randomForestSRC)
+
 ```
 
 ```{r carga2,warning=FALSE,include=FALSE}
-mening <- read_excel("/Users/carlosmartinperez/Desktop/MENINGITIS/Meningitis pre-intervención.xlsx",sheet = 2)
-save("mening", file="/Users/carlosmartinperez/Desktop/MENINGITIS/mening.RData")
+#mening <- read_excel("/Users/carlosmartinperez/Desktop/MENINGITIS/Meningitis #pre-intervención.xlsx",sheet = 2)
+#save("mening", file="/Users/carlosmartinperez/Desktop/MENINGITIS/mening.RData")
+
+mening <- read_excel("plantilla_meningitis.xlsx")
+
 .n<-nrow(mening)
 ```  
 
