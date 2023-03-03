@@ -1,0 +1,434 @@
+---
+title: "BIVARIADO"
+author: "Carlos Martin Perez"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## ANALISIS BIVARIADO BASE DE DATOS MENINGITIS
+
+Para el análisis bivariado deben de considerarse los dos outcomes que se manejan: 
+
+**El tiempo hasta la muerte**. Análisis de supervivencia  
+
+**El tiempo de estancia en el hospital**. Tiempo hasta el alta.  
+
+Las variables explicativas/ predictoras mas importantes son las que tienen que ver con la intervencíon. En nuestro caso, las variables más importantes son la que recoge si se han realizado o no tecnicas molecularers para el diagnóstico etiológico, y el año de ocurencia del evento, bajo el supuesto de que en los ultimos años, con la introducción de las nuevas técnicas diagnósticas las variables de resultado deben de presentar algun tipo de mejora.  
+
+Variables tambien importantes para nuestro propósito son los tiempos de respuesta y la calidad de tratamiento antibiótico en las distintas etapas del tratamiento.  
+
+```{r, include=FALSE}
+library(survival)
+library(knitr)
+library(dplyr)
+library(gridExtra)
+library(openintro)
+library(plotrix)
+library(formattable)
+library(KMsurv)
+library(MASS)
+library(ggplot2)
+library(plotly)
+library(survminer)
+library(ggsankey)
+library(circlize)
+library(readxl)
+library(pillar)
+library(kableExtra)
+library(survival)
+library(VSURF)
+library(KMsurv)
+library(randomForestSRC)
+library(lubridate)
+library(nlme)
+library(fastDummies)
+library(caret)
+library(crosstable)
+library(flextable)
+library(pillar)
+
+mening <- read_xlsx("/Users/carlosmartinperez/Desktop/MENINGITIS/plantilla_meningitis.xlsx")
+#fechas<- read_xlsx("/Users/carlosmartinperez/Desktop/MENINGITIS/Meningitis pre-intervención.xlsx",sheet=4)
+
+lcr<-as.duration(as.period(interval(mening$Fecha_h_meningitis , mening$Fecha_h_LCR)))
+lcr<-ifelse(lcr<0,0,lcr)
+lcr<-round(lcr/3600,1)
+mening$lcr<-lcr
+mening$lcr24<-mening$lcr/24
+
+emp<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$Fecha_h_empirico)))
+emp<-ifelse(emp<0,0,emp)
+emp<-round(emp/3600,1)
+mening$emp<-emp
+mening$emp24<-mening$emp/24
+
+dirigido1<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$Fecha_h_dirigido1)))
+dirigido1<-ifelse(dirigido1<0,0,dirigido1)
+dirigido1<-round(dirigido1/3600,1)
+mening$dirigido1<-dirigido1
+mening$dirigido124<-mening$dirigido1/24
+
+dirigido2<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$Fecha_h_dirigido2)))
+dirigido2<-ifelse(dirigido2<0,0,dirigido2)
+dirigido2<-round(dirigido2/3600,1)
+mening$dirigido2<-dirigido2
+mening$dirigido224<-mening$dirigido2/24
+
+dirigido3<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$Fecha_h_dirigido3)))
+dirigido3<-ifelse(dirigido3<0,0,dirigido3)
+dirigido3<-round(dirigido3/3600,1)
+mening$dirigido3<-dirigido3
+mening$dirigido324<-mening$dirigido3/24
+
+rapidat<-as.duration(as.period(interval(mening$Fecha_h_rapida , mening$Fecha_h_dirigido1)))
+rapidat<-ifelse(rapidat<0,0,rapidat)
+rapidat<-round(rapidat/3600,1)
+mening$rapidat<-rapidat
+mening$rapidat<-mening$rapidat/24
+
+rapida<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$Fecha_h_rapida)))
+rapida<-ifelse(rapida<0,0,rapida)
+rapida<-round(rapida/3600,1)
+mening$rapida<-rapida
+mening$rapida24<-mening$rapida/24
+
+provi<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$Fecha_h_provi)))
+provi<-ifelse(provi<0,0,provi)
+provi<-round(provi/3600,1)
+mening$provi<-provi
+mening$provi24<-mening$provi/24
+
+recepcion<-as.duration(as.period(interval(mening$Fecha_h_meningitis , mening$Fecha_h_recepcion)))
+recepcion<-ifelse(recepcion<0,0,recepcion)
+recepcion<-round(recepcion/3600,1)
+mening$recepcion<-recepcion
+mening$recepcion24<-mening$recepcion/24
+
+final<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$Fecha_h_resultado_final)))
+final<-ifelse(final<0,0,final)
+final<-round(final/3600,1)
+mening$final<-final
+mening$final24<-mening$final/24
+
+cambiodat<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$Fecha_cambio)))
+cambiodat<-ifelse(cambiodat<0,0,cambiodat)
+cambiodat<-round(cambiodat/3600,1)
+mening$cambiodat<-cambiodat
+mening$cambiodat24<-mening$cambiodat/24
+
+diagetiol<-as.duration(as.period(interval(mening$Fecha_h_LCR , mening$fecha_diag_etiol)))
+diagetiol<-ifelse(diagetiol<0,0,diagetiol)
+diagetiol<-round(diagetiol/3600,1)
+mening$diagetiol<-diagetiol
+mening$diagetiol24<-mening$diagetiol/24
+
+mening$tiempo<-as.duration(as.period(interval(mening$Fecha_h_meningitis , mening$Fecha_h_alta)))
+mening$tiempo<-ifelse(mening$tiempo<0,0,mening$tiempo)
+mening$tiempo<-round(mening$tiempo/3600,1)
+
+mening$alta24<-mening$tiempo/24
+ulti2<-mening$Año
+ulti2<-ifelse(ulti2>2019,1,0)
+mening$ulti2<-ulti2
+glimpse(mening)
+
+summary(mening)
+
+Time<-mening$tiempo/24
+recepcion24<-mening$recepcion/24
+
+glimpse(mening)
+
+mening2<-dplyr::select(mening,c(id,Edad,Sexo,Charlson_Index,Glasgow,Diagnostico_sindromico2,TABP, T_em_combinado,
+                                T_em_mixto,ED_0, Actividad0,PCR2,ED_1,DOORMAT1,Provisional,T_dirigido2_combinado,
+                                T_dirigido2_mixto, ED_2,DOORMAT2,Microorganismo , cul_pos,Virica,T_dirigido3_combinado,
+                                T_dirigido3_mixto,ED_3, DOORMAT3,UCI, Muerte_atribuible,Cambio,lcr24,emp24,rapida24,recepcion24,
+                                final24, cambiodat24,diagetiol24, alta24, Año, ulti2))
+glimpse(mening2)
+############ CRECION DE DUMMYS PARA MICROORGANISMO #################################3
+mening2<-dummy_cols(mening2,  select_columns = c( "Microorganismo"),remove_selected_columns = TRUE)
+glimpse(mening2)  
+######################3
+
+############# ELIMINCION DE VARIABLES CON VARIANZA PROXIMA A CERO ##################
+zv1<-mening2 %>%  nearZeroVar(saveMetrics = TRUE)
+
+tablezv <- data.frame(zv1)
+tablezv<-dplyr::select(tablezv,c(nzv))
+tablezv$n<-seq(1:dim(tablezv)[1])
+tablezv<-dplyr::filter(tablezv,nzv=="TRUE")
+tablezv
+mening2<-dplyr::select(mening2,-c(7,17,23,31,39,40,44,45,47,48))
+glimpse(mening2) 
+##########################################
+
+######### SUBSAMPLES VIVOS Y MENINGRF ###################3
+vivos<-dplyr::filter(mening2,Muerte_atribuible==0)
+glimpse(vivos)
+
+meningRF<-dplyr::select(mening2,-c(id))
+glimpse(meningRF)
+
+##################################################
+#Estudiamos correlación entre variables 
+##################################################
+
+library(PerformanceAnalytics)
+library(tidyverse)
+
+dfc<-dplyr::select(meningRF,lcr24,emp24,recepcion24,final24,cambiodat24,diagetiol24)
+dfc %>% 
+select_if(is.numeric)
+chart.Correlation(dfc, histogram = F, method = "pearson")
+
+dfc2<-dplyr::select(meningRF,ED_0,ED_1,ED_2,ED_3,DOORMAT1,DOORMAT2,DOORMAT3)
+dfc2 %>% 
+  select_if(is.numeric)
+chart.Correlation(dfc2, histogram = F, method = "pearson")
+
+####### Eliminamos correlacionadas
+meningRF<-dplyr::select(meningRF,-c(lcr24,final24,cambiodat24))
+glimpse(meningRF)
+########### BD sin tratamientos combinados y mixtos
+mRF_breve<-dplyr::select(meningRF,-c(T_dirigido3_combinado,T_dirigido2_combinado,T_em_mixto,T_em_combinado))
+glimpse(mRF_breve)
+mRF_breve = mRF_breve [ , c(24,19,1:18,20:23,25:31)]
+glimpse(mRF_breve)
+mRF_breve$alta24<-as.numeric(mRF_breve$alta24)
+```  
+
+
+
+
+
+```{r , echo=FALSE, warning=FALSE,comment=F,results='asis'}
+###########################################################################################
+#Algoritmos para obtener todos los modelos posibles con su correspondiente p valor
+#
+#_____funcion primera
+data_select<-function(df,Yvar,Xvar=NULL){
+  df<-df[,c(Yvar,Xvar)]
+  Xvar2<-2:(length(Xvar)+1)
+  return(df)
+}
+
+#_____funcion segunda (combinaciones tomandas de n en n)
+combinar<-function(df,Xvar=NULL,numXVar=1){
+  
+  comb_Var<-t(combn(Xvar,numXVar));combinaciones<-comb_Var
+  
+  colnames(combinaciones)<-NULL
+  
+  options(warn=-1)
+  
+  get_names<-function(df,x){
+    outcome<-matrix(data=NA,nrow=nrow(x),ncol=ncol(x))
+    for(i in 1:nrow(x)){
+      outcome[i,1:ncol(x)]<-colnames(df)[x[i,1:ncol(x)]]
+    }
+    return(outcome)
+  }
+  combn_names<-get_names(df,combinaciones)
+  return(combn_names)
+}
+
+
+Mconf<-function(df, x)
+{
+  filas<-nrow(ccc)
+  #mRF_breve[1]<-as.numeric(mRF_breve[1])
+  #surv<-Surv(mRF_breve[1],mRF_breve[2])
+  materr2<-matrix(nrow=filas,ncol=3)
+  colnames(materr2)<-c( "Variables", "Coeficiente","p_valor")
+  rownames(materr2)<-paste("Modelo",c(1:filas))
+  
+  for (i in 1:nrow(ccc)){
+    xnam <- as.matrix(ccc[i,])
+    #fmla <- as.formula(paste(surv,"~", paste(xnam)))
+    fmla <- as.formula(paste("Surv(",colnames(mRF_breve[1]),",",colnames(mRF_breve[2]),") ~", paste(xnam)))
+    mod <- coxph(fmla, data = mRF_breve)
+    
+    #mod2<- coxph(fmla, data = mRF_breve)
+    
+    #df <- mod$data
+    #prob = predict(mod,type = c("response"))
+    #df$prob = prob
+    
+    fmla<-as.character(fmla)
+    coeficiente<-summary(mod)$coefficients[1]
+    pv<-summary(mod)$coefficients[5]
+    
+    materr2[i,1]<-nrow(xnam)
+    materr2[i,1]<-fmla[3]
+   materr2[i,2]<-round(coeficiente,2)
+    materr2[i,3]<-round(pv,4)
+    
+  }
+  return(materr2)
+  #return(summary(mod)$coefficients[1])
+}
+
+ccc<-combinar(mRF_breve,c(3:31),1)
+
+#mRF_breve$ccc<-ccc
+d<-Mconf(mening2,ccc)
+d<-as.data.frame(d)
+
+d$Coeficiente<-as.numeric(d$Coeficiente)
+d$p_valor<-as.numeric(d$p_valor)
+seleccion1<-dplyr::filter(d,p_valor<0.05)
+seleccion1%>%
+ kbl()%>%
+kable_paper("striped", full_width = F)
+```    
+
+Otras variables de interés   
+
+```{r , echo=FALSE, warning=FALSE,comment=F,results='asis'}
+
+res.cut <- surv_cutpoint(mening2, time = "alta24", event = "Muerte_atribuible",
+                         variables = c("Edad","Charlson_Index","lcr24","emp24","cambiodat24", "recepcion24","final24","diagetiol24"))
+
+```  
+
+```{r,echo=FALSE,comment="",message=FALSE}
+Time<-mening2$alta24
+res.cat <- surv_categorize(res.cut)
+colnames(res.cat)<-c("Time","Muerte_atribuible", "Edad_CAT","Charlson_Index_CAT","lcr_CAT","emp_CAT","cambiodat_CAT", "recepcion_CAT","final_CAT","diagetiol_CAT")
+src<-summary(res.cut)
+
+```  
+
+
+```{r,echo=FALSE,comment="",message=FALSE}
+surv<-(Surv(res.cat$Time,res.cat$Muerte_atribuible))
+Mconf<-function(df, x)
+{
+  filas<-nrow(ccc2)
+  #mRF_breve[1]<-as.numeric(mRF_breve[1])
+  #surv<-Surv(mRF_breve[1],mRF_breve[2])
+  materr2<-matrix(nrow=filas,ncol=3)
+  colnames(materr2)<-c( "Variables", "Coeficiente","p_valor")
+  rownames(materr2)<-paste("Modelo",c(1:filas))
+  
+  for (i in 1:nrow(ccc2)){
+    xnam <- as.matrix(ccc2[i,])
+    #fmla <- as.formula(paste(surv,"~", paste(xnam)))
+    fmla <- as.formula(paste("Surv(",colnames(res.cat[1]),",",colnames(res.cat[2]),") ~", paste(xnam)))
+    mod <- coxph(fmla, data = res.cat)
+    
+    fmla<-as.character(fmla)
+    coeficiente<-summary(mod)$coefficients[1]
+    pv<-summary(mod)$coefficients[5]
+    
+    materr2[i,1]<-nrow(xnam)
+    materr2[i,1]<-fmla[3]
+   materr2[i,2]<-round(coeficiente,2)
+    materr2[i,3]<-round(pv,4)
+    
+  }
+  return(materr2)
+  #return(summary(mod)$coefficients[1])
+}
+ccc2<-combinar(res.cat,c(3:10),1)
+d2<-Mconf(res.cat,ccc2)
+d2<-as.data.frame(d2)
+
+d2$Coeficiente<-as.numeric(d2$Coeficiente)
+d2$p_valor<-as.numeric(d2$p_valor)
+seleccion2<-dplyr::filter(d2,p_valor<0.2)
+d2%>%
+ kbl()%>%
+kable_paper("striped", full_width = F)
+```
+
+
+
+```{r,echo=FALSE,comment="",message=FALSE}
+km53 <- survfit(Surv(Time,Muerte_atribuible)~Edad_CAT,data =res.cat)
+s53<-survdiff(surv~Edad_CAT,data=res.cat)
+spv53<-surv_pvalue(km53,method = "survdiff")
+
+km54 <- survfit(Surv(Time,Muerte_atribuible)~Charlson_Index_CAT,data =res.cat)
+s54<-survdiff(surv~Charlson_Index_CAT,data=res.cat)
+spv54<-surv_pvalue(km54,method = "survdiff")
+
+km55 <- survfit(Surv(Time,Muerte_atribuible)~lcr_CAT,data =res.cat)
+s55<-survdiff(surv~lcr_CAT,data=res.cat)
+spv55<-surv_pvalue(km55,method = "survdiff")
+
+km56 <- survfit(Surv(Time,Muerte_atribuible)~emp_CAT,data =res.cat)
+s56<-survdiff(surv~emp_CAT,data=res.cat)
+spv56<-surv_pvalue(km56,method = "survdiff")
+
+
+km62 <- survfit(Surv(Time,Muerte_atribuible)~recepcion_CAT,data =res.cat)
+s62<-survdiff(surv~recepcion_CAT,data=res.cat)
+spv62<-surv_pvalue(km62,method = "survdiff") 
+
+
+km64 <- survfit(Surv(Time,Muerte_atribuible)~final_CAT,data =res.cat)
+s64<-survdiff(surv~final_CAT,data=res.cat)
+spv64<-surv_pvalue(km64,method = "survdiff") 
+
+km65 <- survfit(Surv(Time,Muerte_atribuible)~cambiodat_CAT,data =res.cat)
+s65<-survdiff(surv~cambiodat_CAT,data=res.cat)
+spv65<-surv_pvalue(km65,method = "survdiff")  
+
+km66 <- survfit(Surv(Time,Muerte_atribuible)~diagetiol_CAT,data =res.cat)
+s66<-survdiff(surv~diagetiol_CAT,data=res.cat)
+spv66<-surv_pvalue(km66,method = "survdiff") 
+
+#######
+matkm2<-matrix(c("Edad_CAT",round(src$cutpoint[1],3),round(s53$chisq,2),round(spv53[2],3),
+                 "Charlson_CAT",round(src$cutpoint[2],3),round(s54$chisq,2),round(spv54[2],3),
+                 "lcr_CAT",round(src$cutpoint[3],3),round(s55$chisq,2),round(spv55[2],3),
+                 "emp_CAT",round(src$cutpoint[4],3),round(s56$chisq,2),round(spv56[2],3),
+                 "recepcion_CAT",round(src$cutpoint[5],3),round(s62$chisq,2),round(spv62[2],3),
+                 
+                 "final_CAT",round(src$cutpoint[6],3),round(s64$chisq,2),round(spv64[2],3),
+                 "cambiodat_CAT",round(src$cutpoint[7],3),round(s65$chisq,2),round(spv65[2],3),
+                 "diagetiol_CAT",round(src$cutpoint[8],3),round(s66$chisq,2),round(spv66[2],3)
+                 
+)
+,ncol = 4,byrow = T)
+colnames(matkm2)<-c("Variable","Punto de corte","Chi square","p_value")
+```
+
+```{r,echo=FALSE,results='asis'}
+cs_dt3 <- data.frame (matkm2)
+
+cs_dt3$p_value = cell_spec(cs_dt3$p_value, color = ifelse(cs_dt3$p_value<0.05, "red", ifelse(cs_dt3$p_value<0.1,"blue","black")))
+
+
+kbl(cs_dt3, escape = FALSE) %>%
+  kable_paper("striped", full_width = TRUE)
+
+
+
+```  
+
+```{r,echo=FALSE,comment="",message=FALSE}
+#res.cat<-dplyr::select(res.cat,- 2)
+defin<-cbind(mening2,res.cat)
+
+c1<-coxph(Surv(alta24,Muerte_atribuible)~Cambio+Glasgow+DOORMAT1+final24,data=defin)
+s1<-summary(c1)
+s1
+```
+
+
+
+
+
+
+
+
+
+
+
+
