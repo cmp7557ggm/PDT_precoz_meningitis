@@ -260,6 +260,8 @@ library(pillar)
 glimpse(mRF_breve)
 
 ############## VIMP RANDOM FOREST ##############################
+
+tune()
 mod1<-rfsrc(Surv(alta24,Muerte_atribuible )~.,data=mRF_breve,ntree = 1000, block.size = 1, nodesize = 1, mtry=22 ,importance = T)
 mod1
 #tune.rfsrc(Surv(alta24,Muerte_atribuible )~.,data=mRF_breve)
