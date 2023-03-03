@@ -116,7 +116,7 @@ recepcion24<-mening$recepcion/24
 
 glimpse(mening)
 
-mening2<-dplyr::select(mening,c(id,Edad,Sexo,Charlson_Index,Glasgow,Diagnostico_sindromico2,TABP, T_em_combinado,
+mening2<-dplyr::select(mening,c(id,Edad,Sexo,Charlson_Index,charlson_Index3, Glasgow,Diagnostico_sindromico2,TABP, T_em_combinado,
                                 T_em_mixto,ED_0, Actividad0,PCR2,ED_1,DOORMAT1,Provisional,T_dirigido2_combinado,
                                 T_dirigido2_mixto, ED_2,DOORMAT2,Microorganismo , cul_pos,Virica,T_dirigido3_combinado,
                                 T_dirigido3_mixto,ED_3, DOORMAT3,UCI, Muerte_atribuible,Cambio,lcr24,emp24,rapida24,recepcion24,
@@ -135,7 +135,7 @@ tablezv<-dplyr::select(tablezv,c(nzv))
 tablezv$n<-seq(1:dim(tablezv)[1])
 tablezv<-dplyr::filter(tablezv,nzv=="TRUE")
 tablezv
-mening2<-dplyr::select(mening2,-c(7,17,23,31,39,40,44,45,47,48))
+mening2<-dplyr::select(mening2,-c(8,18,24,32,40,41,45,46,48,49))
 glimpse(mening2) 
 ##########################################
 
@@ -164,34 +164,166 @@ dfc2 %>%
 chart.Correlation(dfc2, histogram = F, method = "pearson")
 
 ####### Eliminamos correlacionadas
-meningRF<-dplyr::select(meningRF,-c(lcr24,final24,cambiodat24))
-glimpse(meningRF)
+#meningRF<-dplyr::select(meningRF,-c(lcr24,final24,cambiodat24))
+#glimpse(meningRF)
 ########### BD sin tratamientos combinados y mixtos
 mRF_breve<-dplyr::select(meningRF,-c(T_dirigido3_combinado,T_dirigido2_combinado,T_em_mixto,T_em_combinado))
 glimpse(mRF_breve)
+mRF_breve = mRF_breve [ , c(28,20,1:19,21:27,29:35)]
+glimpse(mRF_breve)
+mRF_breve$alta24<-as.numeric(mRF_breve$alta24)
+###########################################################################################
+#Algoritmos para obtener todos los modelos posibles con su correspondiente p valor
+#
+df<-mRF_breve
+glimpse(df)
+
+#_____funcion primera
+data_select<-function(df,Yvar,Xvar=NULL){
+  df<-df[,c(Yvar,Xvar)]
+  Xvar2<-2:(length(Xvar)+1)
+  return(df)
+}
+
+#_____funcion segunda (combinaciones tomandas de n en n)
+combinar<-function(df,Xvar=NULL,numXVar=1){
+  
+  comb_Var<-t(combn(Xvar,numXVar));combinaciones<-comb_Var
+  
+  colnames(combinaciones)<-NULL
+  
+  options(warn=-1)
+  
+  get_names<-function(df,x){
+    outcome<-matrix(data=NA,nrow=nrow(x),ncol=ncol(x))
+    for(i in 1:nrow(x)){
+      outcome[i,1:ncol(x)]<-colnames(df)[x[i,1:ncol(x)]]
+    }
+    return(outcome)
+  }
+  combn_names<-get_names(df,combinaciones)
+  return(combn_names)
+}
 
 
+Mconf<-function(df, x)
+{
+  filas<-nrow(ccc)
+  materr2<-matrix(nrow=filas,ncol=3)
+  colnames(materr2)<-c( "Variables", "Coeficiente","p_valor")
+  rownames(materr2)<-paste("Modelo",c(1:filas))
+  
+  for (i in 1:nrow(ccc)){
+    xnam <- as.matrix(ccc[i,])
+    #fmla <- as.formula(paste(surv,"~", paste(xnam)))
+    fmla <- as.formula(paste("Surv(",colnames(df[1]),",",colnames(df[2]),") ~", paste(xnam)))
+    mod <- coxph(fmla, data = df)
+    
+    fmla<-as.character(fmla)
+    coeficiente<-summary(mod)$coefficients[1]
+    pv<-summary(mod)$coefficients[5]
+    
+    materr2[i,1]<-nrow(xnam)
+    materr2[i,1]<-fmla[3]
+   materr2[i,2]<-round(coeficiente,2)
+    materr2[i,3]<-round(pv,4)
+    
+  }
+  return(materr2)
+}
 
+ccc<-combinar(df,c(3:31),1)
+
+#mRF_breve$ccc<-ccc
+d<-Mconf(df,ccc)
+d<-as.data.frame(d)
+d
+d$Coeficiente<-as.numeric(d$Coeficiente)
+d$p_valor<-as.numeric(d$p_valor)
+seleccion1<-dplyr::filter(d,p_valor<0.05)
+seleccion1%>%
+ kbl()%>%
+kable_paper("striped", full_width = F)
+
+c1<-coxph(Surv(alta24,Muerte_atribuible)~Cambio+Glasgow+DOORMAT1,data=mRF_breve)
+s1<-summary(c1)
+s1
+summary(mRF_breve$alta24)
+
+######## polinomios  ##################
+# 7 dias
+library(mfp)
+cp1<-mfp(Surv(alta24,Muerte_atribuible)~Cambio+fp(Glasgow)+fp(ED_1 ),data=mRF_breve,family = "cox")
+s1<-summary(cp1)
+s1
+library(pillar)
+glimpse(mRF_breve)
+
+############## VIMP RANDOM FOREST ##############################
+mod1<-rfsrc(Surv(alta24,Muerte_atribuible )~.,data=mRF_breve,ntree = 1000, block.size = 1, nodesize = 1, mtry=22 ,importance = T)
+mod1
+#tune.rfsrc(Surv(alta24,Muerte_atribuible )~.,data=mRF_breve)
+imperm<-data.frame(mod1$importance)
+imperm<-arrange(imperm,desc(mod1.importance))
+imperm%>%
+  kbl()%>%
+  kable_styling(full_width = F)
+oo <- subsample(mod1, verbose = FALSE)
+# take a delete-d-jackknife procedure for example
+vimpCI <- extract.subsample(oo)$var.jk.sel.Z
+vimpCI<-as.data.frame(vimpCI)
+vimpCI_pos<-dplyr::filter(vimpCI,signif==TRUE)
+vimpCI_pos<-dplyr::arrange(vimpCI_pos,desc(mean))
+vimpCI_pos
+# Confidence Intervals for VIMP
+plot.subsample(oo)
+
+plot.variable(mod1, xvar.names = "cambiodat24", partial = F,notch=F,surv.type="surv",time=30)
+plot.variable(mod1, xvar.names = "cambiodat24", partial = T,surv.type="surv",time=30)
 
 ###############################################################33
-ggplot(mening,aes(x=id , y = Time)) +
+p1<-ggplot(mening,aes(x=id , y = Time)) +
   geom_linerange(aes(ymin = 0, ymax = Time), lwd=0.2) +
   geom_point(aes( color=factor(Muerte_atribuible)), size=2) +
-  geom_point(aes( x=id, y = lcr24), size=1,shape=13 ) +
-  geom_point(aes( x=id, y = emp24), size=1,colour="peru",shape=13) +
-  geom_point(aes( x=id, y = diagetiol24), size=1,colour="green",shape=13) +
-  #ylim(0,4)+
+  geom_point(aes( x=id, y = diagetiol24), size=1,shape=13 ) +
+  #geom_point(aes( x=id, y = emp24), size=1,colour="peru",shape=13) +
+  #geom_point(aes( x=id, y = diagetiol24), size=1,colour="green",shape=13) +
+  #coord_cartesian ( ylim = c ( 0 , 7 ) )+
   labs(y = "tiempo (Días)", x = "Paciente nº") +
-  coord_flip() +
+  coord_flip(ylim = c ( 0 , 7 )) +
   scale_color_discrete(name="Tiempo hasta evento", breaks=c("0", "1"),
                        labels=c("Censura", "Fallecido meningitis")) + theme(legend.position="left") +
   theme(axis.text=element_text(size=10), axis.title=element_text(size=10),
         legend.text=element_text(size=7), legend.title=element_text(size=8))
+p1
 
 
+   
+summary(mRF_breve$alta24)
 
+alta_7<-ifelse(mRF_breve$alta24>7,7,mRF_breve$alta24)
+alta_7
+mRF_breve$alta7<-alta7
 
+alta_30<-ifelse(mRF_breve$alta24>30,30,mRF_breve$alta24)
+alta_30
+mRF_breve$alta_30<-alta_30
 
+alta_12<-ifelse(mRF_breve$alta24>15,15,mRF_breve$alta24)
+alta_12
+mRF_breve$alta_12<-alta_12
+
+mRF_breve$diagetiol24neg<-1-(mRF_breve$diagetiol24)
+mRF_breve$diagetiol24neg
+c1<-coxph(Surv(alta_12,Muerte_atribuible)~Cambio+Glasgow+ED_1+diagetiol24neg,data=mRF_breve)
+s1<-summary(c1)
+s1
+
+surv = Surv(mRF_breve$alta24, mRF_breve$Muerte_atribuible)
+crosstable(mRF_breve, surv ~recepcion24, times=c(6,12,24,36), followup=T)%>% 
+as_flextable(keep_id=TRUE)
+
+class(mRF_breve$diagetiol24)
 ############################3
 datos<-matrix(c(lcr,emp,dirigido1,dirigido2,dirigido3,rapidat,rapida,recepcion,provi,final,cambiodat,diagetiol),ncol= 12)
 colnames(datos)<-c("lcr","emp", "dirigido1","dirigido2","dirigido3", "rapidat","rapida","recepcion","provi","final",
@@ -230,3 +362,12 @@ datos$Virica<-as.factor(datos$Virica)
 data<-cbind(mening,datos)
 glimpse(datos)
 #######################################################
+ct = crosstable(vivos, everything(),by=alta24,test = T) #or simply `crosstable(iris2)`
+ct %>% 
+  as_flextable(keep_id=TRUE)
+
+
+vivos$Año<-as.factor(vivos$Año)
+ct2 = crosstable(vivos, alta24,by=UCI ,test = T) #or simply `crosstable(iris2)`
+ct2 %>% 
+  as_flextable(keep_id=TRUE)
